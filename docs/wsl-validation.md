@@ -1,6 +1,6 @@
 # WSL validation guide
 
-This document describes how to build, flash, and validate the Desk Pet firmware on WSL2 before a Mac bridge is available.
+This document describes how to build, flash, and validate the Desk Pet firmware on WSL2 before a Mac bridge is available. For the full firmware roadmap and milestone plan, see [desk-pet-firmware-plan.md](desk-pet-firmware-plan.md).
 
 ## Prerequisites
 

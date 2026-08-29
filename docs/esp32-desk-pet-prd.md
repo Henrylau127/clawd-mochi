@@ -1,5 +1,7 @@
 # ESP32-C3 Desk Pet + Agent Status Display (v5)
 
+**Related docs:** [desk-pet-firmware-plan.md](desk-pet-firmware-plan.md) (implementation plan snapshot), [wsl-validation.md](wsl-validation.md) (WSL build/flash validation).
+
 ## Product Overview
 
 A 1.54" 240×²⁴⁰ ST7789-based desk pet that:
