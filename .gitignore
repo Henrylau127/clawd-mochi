@@ -23,3 +23,12 @@ desktop.ini
 *.log
 *.tmp
 *.bak
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+compile_commands.json
+
+# PlatformIO / CMake build artifacts
+cmake-build-*/

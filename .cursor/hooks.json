@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "command": "scripts/cursor-hook.sh sessionStart" }
+    ],
+    "sessionEnd": [
+      { "command": "scripts/cursor-hook.sh sessionEnd" }
+    ],
+    "afterAgentThought": [
+      { "command": "scripts/cursor-hook.sh afterAgentThought" }
+    ],
+    "beforeShellExecution": [
+      { "command": "scripts/cursor-hook.sh beforeShellExecution" }
+    ],
+    "afterAgentResponse": [
+      { "command": "scripts/cursor-hook.sh afterAgentResponse" }
+    ],
+    "postToolUseFailure": [
+      { "command": "scripts/cursor-hook.sh postToolUseFailure" }
+    ],
+    "beforeMCPExecution": [
+      { "command": "scripts/cursor-hook.sh beforeMCPExecution" }
+    ],
+    "afterShellExecution": [
+      { "command": "scripts/cursor-hook.sh afterShellExecution" }
+    ]
+  }
+}

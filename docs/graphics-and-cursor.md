@@ -1,0 +1,60 @@
+# Graphics vs original Mochi + Cursor integration
+
+## Why the display does not look like the original repo
+
+The desk pet firmware is **not** the original WiFi sketch. After boot (splash + logo reveal), it enters **WANDER** mode and cycles every 15 seconds:
+
+| Screen | What you see |
+|--------|----------------|
+| Idle | Colored background + two vertical bars (eyes) |
+| Ambient | Dark blue + randomly placed twinkling stars (new layout each 15s cycle) |
+
+That matches `src/extensions/WanderScreens.cpp`, not a bug.
+
+Original [clawd_mochi.ino](clawd_mochi.ino) used **orange** backgrounds, **wiggle + blink** (`animNormalEyes`), a WiFi info screen, and a phone web controller. Those are intentionally absent in BLE-first desk pet firmware (recovery sketch: `sketches/clawd_mochi_recovery/`).
+
+Agent expressions (blue coding eyes, yellow `><` thinking, etc.) appear only in **AGENT** mode — not from wander cycling.
+
+## Does Cursor change the graphics?
+
+**Not yet.** Cursor hooks need this chain:
+
+```text
+.cursor/hooks.json → scripts/cursor-hook.sh → Mac Tauri bridge (127.0.0.1:8765)
+  → BLE → firmware → Face::drawExpression
+```
+
+The **Tauri bridge is not built** (Linear HEN-11, deferred). Hooks will POST silently until the bridge exists.
+
+### Test without Cursor
+
+```bash
+# Serial (WSL)
+echo STATUS | socat - /dev/ttyACM0,raw,echo=0,b115200
+echo TEST thinking | socat - /dev/ttyACM0,raw,echo=0,b115200
+echo '{"event":"sessionStart","state":"coding"}' | socat - /dev/ttyACM0,raw,echo=0,b115200
+```
+
+### Stuck on `><` (thinking)
+
+AGENT `thinking` stays until explicitly cleared — often left behind by `TEST thinking` during validation.
+
+```bash
+echo WANDER | socat - /dev/ttyACM0,raw,echo=0,b115200
+# or: echo '{"event":"sessionEnd"}' | socat - ...
+```
+
+`TEST idle` shows idle eyes but keeps AGENT mode. `WAKE` only exits SLEEP. See [wsl-validation.md](wsl-validation.md) for the full serial command table.
+
+## Agent skill for full hook setup
+
+See `~/.cursor/skills-cursor/desk-pet-cursor-hooks/SKILL.md` for event mapping, WSL vs Mac notes, and validation checklist.
+
+Project templates (inactive until bridge runs):
+
+- [.cursor/hooks.json](../.cursor/hooks.json)
+- [scripts/cursor-hook.sh](../scripts/cursor-hook.sh)
+
+## Restoring original Mochi look (firmware work)
+
+Hooks cannot restore orange wiggle-eyes or remove ambient star screens. That requires firmware changes (port `animNormalEyes`, orange wander background, disable or lengthen wander cycle). Track as a separate feature if desired.

@@ -5,7 +5,7 @@
 A 1.54" 240×²⁴⁰ ST7789-based desk pet that:
 - Shows **animated graphics** based on the original **Clawd Mochi** firmware (face/eyes, expressions).
 - Acts as a **Cursor agent status display** (coding, thinking, idle, waiting_for_user, error).
-- Wanders through fun screens (weather, stocks/crypto, quotes, animations) when no agent session is active.
+- Wanders through fun screens (weather, stocks/crypto, animations) when no agent session is active.
 - **Demands attention** with background color changes / flashing if it needs user interaction and the user hasn't responded for a while.
 - Reacts to **high-sensitivity Cursor events** (SSH logins, GitHub logins, security-related actions) that are easy to miss.
 - Uses **Bluetooth Low Energy (BLE)** to communicate with a small macOS **Tauri menu-bar bridge**; Wi-Fi is not required for agent integration.
@@ -60,7 +60,7 @@ Base firmware:
 
 ### Wander Mode
 
-- As a developer, I want fun screens when no agent session is active: animated face, optional Mac-provided weather/market data, quotes/facts, and ambient animations.
+- As a developer, I want fun screens when no agent session is active: animated face, optional Mac-provided weather/market data, and ambient animations.
 
 ### Mac Menu Bar Bridge
 
@@ -226,7 +226,6 @@ In `WANDER` mode, cycle through:
 - `PetIdleScreen`: original Mochi-like face, blink/look animations.
 - `WeatherScreen`: optional Mac-provided weather.
 - `StocksScreen`: optional Mac-provided market data.
-- `QuoteScreen`: local quote/joke/fact set.
 - `AmbientScreen`: stars, rain, bouncing logo, etc.
 
 Default cycle: 15 seconds, configurable.
@@ -450,7 +449,7 @@ Cursor hooks may not reliably identify all SSH/GitHub login UI prompts. Add opti
 
 ### Phase 5: Wander Screens and Quota
 - Add original-Mochi-style idle animation.
-- Add Mac-provided weather/market/quote updates.
+- Add Mac-provided weather/market updates.
 - Add quota bar.
 
 ### Phase 6: Attention & Security
