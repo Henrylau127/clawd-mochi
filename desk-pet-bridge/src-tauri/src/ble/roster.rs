@@ -11,11 +11,7 @@ pub fn choose_pet<'a>(
     known_ids: &[String],
     pairing: bool,
 ) -> Option<&'a FoundPet> {
-    let is_known = |pet: &FoundPet| {
-        known_ids
-            .iter()
-            .any(|id| id == &pet.id || id == &pet.name)
-    };
+    let is_known = |pet: &FoundPet| known_ids.iter().any(|id| id == &pet.id || id == &pet.name);
 
     if pairing {
         if let Some(fresh) = found.iter().find(|pet| !is_known(pet)) {
@@ -37,7 +33,9 @@ pub fn choose_pet<'a>(
 
 pub fn display_name(raw: Option<String>) -> String {
     match raw {
-        Some(name) if !name.is_empty() && name != "DP-????" && !name.eq_ignore_ascii_case("dp-xxxx") => {
+        Some(name)
+            if !name.is_empty() && name != "DP-????" && !name.eq_ignore_ascii_case("dp-xxxx") =>
+        {
             name
         }
         _ => "Desk pet".to_string(),

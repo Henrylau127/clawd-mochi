@@ -43,11 +43,27 @@ bool gBootButtonWasDown = false;
 
 void onAttentionRequiredHook() { gAttention.onAttentionRequired(); }
 void onAttentionClearedHook() { gAttention.onAttentionCleared(); }
+void onSessionStartHook() {
+  gAttention.onSessionChange();
+  gRenderDirty = true;
+}
+void onSessionEndHook() {
+  gAttention.onSessionChange();
+  gWander.reset();
+  gRenderDirty = true;
+}
 void onSecurityEventHook(const char* type) { gSecurity.trigger(type); }
 void onQuotaUpdateHook(uint8_t percent) { gQuota.setPercent(percent); }
 void onPairingStartHook() { gBleSecurity.startPairingWindow(); }
 void onPairingStopHook() { gBleSecurity.stopPairingWindow(); }
 void onUnbondHook() { gBleSecurity.eraseBonds(); }
+void onSecureBleWakeHook() {
+  if (gState.onWake() == TransitionResult::OK) {
+    gBacklight.onWake();
+    gWander.reset();
+    gRenderDirty = true;
+  }
+}
 
 String deviceNameFromMac() {
   uint8_t mac[6] = {};
@@ -60,15 +76,15 @@ String deviceNameFromMac() {
 void markDirty() { gRenderDirty = true; }
 
 void drawActiveScene() {
-  if (gState.mode == PetMode::SLEEP) {
-    gBacklight.onSleep();
-    gDisplay.tft().fillScreen(gDisplay.colorDarkBg());
+  if (gBleSecurity.shouldShowPairingScreen()) {
+    gBacklight.setPercent(100);
+    gBleSecurity.showPairingScreen();
     return;
   }
 
-  if (gBleSecurity.isPairingActive() && gState.pairingActive) {
-    gBacklight.setPercent(100);
-    gBleSecurity.showPairingScreen();
+  if (gState.mode == PetMode::SLEEP) {
+    gBacklight.onSleep();
+    gDisplay.tft().fillScreen(gDisplay.colorDarkBg());
     return;
   }
 
@@ -87,15 +103,13 @@ void drawActiveScene() {
   }
   gBacklight.setPercent(brightness);
 
-  if (gState.mode == PetMode::WANDER && !gState.bleConnected) {
+  if (gState.mode == PetMode::WANDER) {
     return;
   }
 
   if (gState.mode == PetMode::AGENT) {
     if (gState.attentionLevel == AttentionLevel::URGENT) {
       gDisplay.setAnimBgColor(gDisplay.colorOrange());
-    } else if (gState.attentionLevel == AttentionLevel::FAST_PULSE) {
-      gState.expression = AgentExpression::WAITING;
     }
     gFace.drawExpression(gState.expression);
     gQuota.drawBar();
@@ -108,8 +122,16 @@ void tickRender() {
   }
 
   const uint32_t now = millis();
+  const bool securityExpired = gSecurity.tick(now);
+  if (securityExpired) {
+    gRenderDirty = true;
+    if (gState.mode == PetMode::WANDER) {
+      gWander.reset();
+    }
+  }
+  gQuota.tick();
   bool dirty = gRenderDirty || gSerial.needsRedraw() || gAttention.needsRedraw() ||
-               gSecurity.needsRedraw();
+               gSecurity.needsRedraw() || gBleSecurity.needsRedraw();
 
   if (gState.mode == PetMode::WANDER && gPrevMode != PetMode::WANDER) {
     gWander.reset();
@@ -117,7 +139,7 @@ void tickRender() {
   }
   gPrevMode = gState.mode;
 
-  if (gState.mode == PetMode::WANDER && !gState.bleConnected && !gState.securityOverlayActive) {
+  if (gState.mode == PetMode::WANDER && !gState.securityOverlayActive) {
     gWander.tick(now);
     dirty = dirty || gWander.needsRedraw();
   } else if (gState.mode == PetMode::AGENT) {
@@ -125,11 +147,8 @@ void tickRender() {
     dirty = dirty || gAttention.needsRedraw();
   }
 
-  gSecurity.tick(now);
-  gQuota.tick();
-
   if (dirty) {
-    if (!(gState.mode == PetMode::WANDER && !gState.bleConnected && !gState.securityOverlayActive &&
+    if (!(gState.mode == PetMode::WANDER && !gState.securityOverlayActive &&
           !gSerial.needsRedraw() && !gRenderDirty && !gSecurity.needsRedraw())) {
       drawActiveScene();
     }
@@ -137,6 +156,7 @@ void tickRender() {
     gSerial.clearRedraw();
     gAttention.clearRedraw();
     gSecurity.clearRedraw();
+    gBleSecurity.clearRedraw();
     gWander.clearRedraw();
   }
 }
@@ -190,12 +210,14 @@ void setup() {
 
   JsonProtocol::setEventHooks(onAttentionRequiredHook, onAttentionClearedHook, onSecurityEventHook,
                               onQuotaUpdateHook);
+  JsonProtocol::setSessionHooks(onSessionStartHook, onSessionEndHook);
   JsonProtocol::setPairingHooks(onPairingStartHook, onPairingStopHook, onUnbondHook);
 
   gBleSecurity.begin();
   const String deviceName = deviceNameFromMac();
   gBleTransport.begin(deviceName.c_str());
   BleTransport::setRedrawHook(markDirty);
+  BleTransport::setSecureWakeHook(onSecureBleWakeHook);
 
   gBootPhaseStartMs = millis();
   gFace.showBootSplash();

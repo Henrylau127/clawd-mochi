@@ -6,7 +6,8 @@ Tauri v2 menu-bar app that forwards Cursor agent events to the ESP32 desk pet ov
 
 - Lives in the macOS menu bar (no dock icon).
 - Scans for `DP-<MAC>` and the desk-pet GATT service.
-- Writes compact JSON to Command RX (`7d3f1b2e-...d002`) using CoreBluetooth via `btleplug`.
+- Writes compact JSON to the encrypted Command RX (`7d3f1b2e-...d002`) using CoreBluetooth via `btleplug`.
+- Performs a secure GATT handshake before reporting the pet as connected; the first pairing can wait for the macOS passkey prompt.
 - Exposes a loopback HTTP API on `127.0.0.1:8765` for Cursor hooks.
 - Queues events while BLE is reconnecting (max 64).
 - Never logs passkeys, tokens, or bond material.
@@ -31,7 +32,12 @@ pnpm tauri dev
 
 Tray actions: click the menu-bar icon to open the status popover (not a dropdown menu). Click outside or press Escape to dismiss. Use **Quit** in the popover footer.
 
-macOS will prompt for Bluetooth access. Pairing uses the ESP32 120s window and the passkey shown on the TFT.
+macOS will prompt for Bluetooth access. Initial enrollment is device-confirmed: open `PAIR` in the
+USB serial monitor or hold GPIO9 on the pet, then click **Add pet**. The bridge performs a secure
+GATT handshake; the ESP32 displays the passkey on the TFT and macOS asks for it. The resulting bond
+is stored by macOS and the ESP32, so later bridge restarts should reconnect without another PIN.
+The bridge cannot remove a CoreBluetooth bond; use System Settings > Bluetooth > the pet >
+**Forget This Device** when a full reset is needed.
 
 ## Loopback API
 
@@ -45,6 +51,9 @@ Bound only to `127.0.0.1:8765`.
 | POST | `/v1/power` | `{"action":"sleep"}` or `{"action":"wake"}` |
 | POST | `/v1/pairing/start` | — |
 | POST | `/v1/pairing/stop` | — |
+
+Pairing controls only start or stop the bridge's enrollment guidance. They do not remotely authorize
+a new device; use serial `PAIR` or a GPIO9 long-press on the pet.
 
 Example:
 
@@ -87,9 +96,10 @@ Firmware host tests remain:
 
 ## BLE E2E (HEN-8)
 
-1. Flash firmware `0.2.1-mac1` or later.
-2. Open pairing from the tray or `POST /v1/pairing/start` (or serial `PAIR` / GPIO9 long-press).
-3. Confirm the six-digit passkey on the TFT in the macOS prompt.
-4. `GET /v1/status` should show `ble: connected` and the `DP-` name.
-5. `POST /v1/test` should ACK and change the face.
-6. Reboot the ESP32; the bridge should reconnect without pairing.
+1. Flash firmware `0.2.2-mac2` or later.
+2. Start device pairing with serial `PAIR` or a GPIO9 long-press.
+3. Open **Add pet** from Settings while the pairing window is open.
+4. Confirm the six-digit passkey shown on the TFT in the macOS prompt.
+5. `GET /v1/status` should show `ble: connected` and the `DP-` name.
+6. `POST /v1/test` should ACK and change the face.
+7. Restart the bridge or reboot the ESP32; the bond should reconnect without another PIN.

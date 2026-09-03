@@ -8,6 +8,8 @@ namespace {
 
 void (*gOnAttentionRequired)() = nullptr;
 void (*gOnAttentionCleared)() = nullptr;
+void (*gOnSessionStart)() = nullptr;
+void (*gOnSessionEnd)() = nullptr;
 void (*gOnSecurityEvent)(const char*) = nullptr;
 void (*gOnQuotaUpdate)(uint8_t) = nullptr;
 void (*gOnPairingStart)() = nullptr;
@@ -22,6 +24,11 @@ void JsonProtocol::setEventHooks(void (*onAttentionRequired)(), void (*onAttenti
   gOnAttentionCleared = onAttentionCleared;
   gOnSecurityEvent = onSecurityEvent;
   gOnQuotaUpdate = onQuotaUpdate;
+}
+
+void JsonProtocol::setSessionHooks(void (*onSessionStart)(), void (*onSessionEnd)()) {
+  gOnSessionStart = onSessionStart;
+  gOnSessionEnd = onSessionEnd;
 }
 
 void JsonProtocol::setPairingHooks(void (*onPairingStart)(), void (*onPairingStop)(), void (*onUnbond)()) {
@@ -87,10 +94,18 @@ TransitionResult JsonProtocol::applyEvent(PetStateMachine& sm, const JsonParseRe
 
   if (strcmp(parsed.event, "sessionStart") == 0) {
     const char* state = parsed.state[0] != '\0' ? parsed.state : "coding";
-    return sm.onSessionStart(state);
+    const TransitionResult tr = sm.onSessionStart(state);
+    if (tr == TransitionResult::OK && gOnSessionStart != nullptr) {
+      gOnSessionStart();
+    }
+    return tr;
   }
   if (strcmp(parsed.event, "sessionEnd") == 0) {
-    return sm.onSessionEnd();
+    const TransitionResult tr = sm.onSessionEnd();
+    if (tr == TransitionResult::OK && gOnSessionEnd != nullptr) {
+      gOnSessionEnd();
+    }
+    return tr;
   }
   if (strcmp(parsed.event, "stateUpdate") == 0) {
     if (parsed.state[0] == '\0') {
@@ -126,7 +141,8 @@ TransitionResult JsonProtocol::applyEvent(PetStateMachine& sm, const JsonParseRe
     return tr;
   }
   if (strcmp(parsed.event, "quotaUpdate") == 0 || parsed.quotaPercent >= 0) {
-    const uint8_t pct = parsed.quotaPercent >= 0 ? static_cast<uint8_t>(parsed.quotaPercent) : 0;
+    const int quota = parsed.quotaPercent < 0 ? 0 : parsed.quotaPercent;
+    const uint8_t pct = static_cast<uint8_t>(quota > 100 ? 100 : quota);
     const TransitionResult tr = sm.onQuotaUpdate(pct);
     if (tr == TransitionResult::OK && gOnQuotaUpdate != nullptr) {
       gOnQuotaUpdate(pct);
@@ -169,6 +185,7 @@ size_t JsonProtocol::buildStatusJson(const PetStateMachine& sm, char* out, size_
   doc["expression"] = PetStateMachine::expressionName(sm.expression);
   doc["backlight"] = sm.backlightPercent;
   doc["ble_connected"] = sm.bleConnected;
+  doc["secure_session"] = sm.bleConnected;
   doc["pairing_active"] = sm.pairingActive;
   doc["attention_level"] = PetStateMachine::attentionLevelName(sm.attentionLevel);
   doc["attention_active"] = sm.attentionActive;

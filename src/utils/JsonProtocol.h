@@ -23,5 +23,6 @@ struct JsonProtocol {
   static TransitionResult applyEvent(PetStateMachine& sm, const JsonParseResult& parsed);
   static void setEventHooks(void (*onAttentionRequired)(), void (*onAttentionCleared)(),
                             void (*onSecurityEvent)(const char*), void (*onQuotaUpdate)(uint8_t));
+  static void setSessionHooks(void (*onSessionStart)(), void (*onSessionEnd)());
   static void setPairingHooks(void (*onPairingStart)(), void (*onPairingStop)(), void (*onUnbond)());
 };

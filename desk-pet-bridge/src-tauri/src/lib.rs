@@ -14,7 +14,9 @@ use tokio::sync::mpsc;
 use crate::state::{BridgeCommand, Shared};
 
 #[tauri::command]
-async fn get_status(shared: tauri::State<'_, Arc<Shared>>) -> Result<state::StatusSnapshot, String> {
+async fn get_status(
+    shared: tauri::State<'_, Arc<Shared>>,
+) -> Result<state::StatusSnapshot, String> {
     Ok(shared.snapshot().await)
 }
 
@@ -69,7 +71,13 @@ async fn forget_device(shared: tauri::State<'_, Arc<Shared>>) -> Result<(), Stri
         .command_tx
         .send(BridgeCommand::Reconnect)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    shared
+        .set_error(Some(
+            "Pet removed from the bridge. To remove the macOS Bluetooth bond, open System Settings > Bluetooth and choose Forget This Device for the pet.".to_string(),
+        ))
+        .await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -157,18 +165,16 @@ pub fn run() {
             tauri::async_runtime::spawn(ble::client::run(shared, command_rx));
             Ok(())
         })
-        .on_window_event(|window, event| {
-            match event {
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    let _ = window.hide();
-                    api.prevent_close();
-                }
-                tauri::WindowEvent::Focused(false) => {
-                    crate::tray::note_closed(window.app_handle());
-                    let _ = window.hide();
-                }
-                _ => {}
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                let _ = window.hide();
+                api.prevent_close();
             }
+            tauri::WindowEvent::Focused(false) => {
+                crate::tray::note_closed(window.app_handle());
+                let _ = window.hide();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_status,

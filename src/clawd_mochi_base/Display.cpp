@@ -1,12 +1,21 @@
 #include "Display.h"
 
+#include <Arduino.h>
 #include <SPI.h>
+
+namespace {
+
+constexpr uint32_t kBacklightPwmHz = 5000;
+constexpr uint8_t kBacklightPwmResolution = 12;
+constexpr uint32_t kBacklightPwmMaxDuty = (1U << kBacklightPwmResolution) - 1;
+
+}  // namespace
 
 Display::Display() : tft_(TFT_CS, TFT_DC, TFT_RST) {}
 
 void Display::begin() {
-  pinMode(TFT_BLK, OUTPUT);
-  setBacklight(true);
+  ledcAttach(TFT_BLK, kBacklightPwmHz, kBacklightPwmResolution);
+  setBacklightPercent(100);
 
   SPI.begin(8, -1, 10, TFT_CS);
   tft_.init(DISP_W, DISP_H);
@@ -24,14 +33,12 @@ void Display::initColours() {
 }
 
 void Display::setBacklight(bool on) {
-  backlightOn_ = on;
-  digitalWrite(TFT_BLK, on ? HIGH : LOW);
+  setBacklightPercent(on ? 100 : 0);
 }
 
 void Display::setBacklightPercent(uint8_t percent) {
-  if (percent == 0) {
-    setBacklight(false);
-    return;
-  }
-  setBacklight(true);
+  const uint8_t clamped = percent > 100 ? 100 : percent;
+  const uint32_t duty = (static_cast<uint32_t>(clamped) * kBacklightPwmMaxDuty) / 100;
+  backlightOn_ = clamped != 0;
+  ledcWrite(TFT_BLK, duty);
 }

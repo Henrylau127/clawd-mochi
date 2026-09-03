@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use super::pairing::PairingWindow;
 use crate::bridge::protocol::DeskPetEvent;
-use crate::state::{BlePhase, BridgeCommand, Shared};
+use crate::state::{BlePhase, BridgeCommand, EnrollmentPhase, Shared};
 
 pub const MOCK_DEVICE_NAME: &str = "DP-TEST";
 
@@ -104,7 +104,7 @@ impl SimulatedPet {
 pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<BridgeCommand>) {
     tracing::info!("BLE mock enabled; simulated peripheral {MOCK_DEVICE_NAME}");
     shared
-        .set_phase(BlePhase::Connected, Some(MOCK_DEVICE_NAME.to_string()))
+        .mark_secure_session_ready("mock", MOCK_DEVICE_NAME)
         .await;
     shared.set_simulated_pet("wander", "idle").await;
 
@@ -115,13 +115,22 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<BridgeCommand
         if pairing.expire_if_needed() {
             pet.pairing_active = false;
             shared.set_pairing(false).await;
+            shared.set_enrollment(EnrollmentPhase::NoPetFound).await;
         }
+        sync_pairing_status(&shared, &pairing).await;
 
-        let Some(cmd) = commands.recv().await else {
-            break;
-        };
-        handle_command(&shared, &mut pet, &mut pairing, cmd).await;
+        tokio::select! {
+            cmd = commands.recv() => {
+                let Some(cmd) = cmd else { break; };
+                handle_command(&shared, &mut pet, &mut pairing, cmd).await;
+            }
+            _ = tokio::time::sleep(Duration::from_millis(250)) => {}
+        }
     }
+}
+
+async fn sync_pairing_status(shared: &Shared, pairing: &PairingWindow) {
+    shared.set_pairing_deadline(pairing.deadline()).await;
 }
 
 async fn handle_command(
@@ -132,44 +141,77 @@ async fn handle_command(
 ) {
     match cmd {
         BridgeCommand::Reconnect => {
-            shared.set_phase(BlePhase::Disconnected, None).await;
+            shared.set_phase(BlePhase::Scanning, None).await;
             tokio::time::sleep(Duration::from_millis(30)).await;
             shared
-                .set_phase(BlePhase::Connected, Some(MOCK_DEVICE_NAME.to_string()))
+                .begin_secure_session("mock", MOCK_DEVICE_NAME, false)
+                .await;
+            shared
+                .mark_secure_session_ready("mock", MOCK_DEVICE_NAME)
+                .await;
+            shared
+                .set_pet_status(Some(pet.mode.clone()), Some(pet.state.clone()))
                 .await;
             flush_queue(shared, pet).await;
         }
         BridgeCommand::StartPairing => {
             pairing.start();
-            let mut event = DeskPetEvent::new("pairingStart");
-            event.ensure_id();
-            apply_event(shared, pet, pairing, event).await;
+            shared
+                .set_enrollment(EnrollmentPhase::AwaitingDevicePair)
+                .await;
+            sync_pairing_status(shared, pairing).await;
         }
         BridgeCommand::StopPairing => {
             pairing.stop();
-            let mut event = DeskPetEvent::new("pairingStop");
-            event.ensure_id();
-            apply_event(shared, pet, pairing, event).await;
+            shared.set_pairing(false).await;
+            shared.set_enrollment(EnrollmentPhase::Idle).await;
         }
         BridgeCommand::Unbond => {
             pairing.stop();
-            let mut event = DeskPetEvent::new("unbond");
-            event.ensure_id();
-            apply_event(shared, pet, pairing, event).await;
+            shared.set_pairing(false).await;
+            shared.set_enrollment(EnrollmentPhase::Idle).await;
+            shared.reset_secure_session(None).await;
         }
         BridgeCommand::AddPet => {
             pairing.start();
             shared.set_pairing(true).await;
+            sync_pairing_status(shared, pairing).await;
+            shared
+                .set_enrollment(EnrollmentPhase::AwaitingDevicePair)
+                .await;
+            shared.set_phase(BlePhase::Scanning, None).await;
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            shared
+                .begin_secure_session("mock", MOCK_DEVICE_NAME, true)
+                .await;
+            shared
+                .mark_secure_session_ready("mock", MOCK_DEVICE_NAME)
+                .await;
             shared
                 .remember_pet("mock".to_string(), MOCK_DEVICE_NAME.to_string())
                 .await;
-            shared.set_phase(BlePhase::Disconnected, None).await;
-            tokio::time::sleep(Duration::from_millis(30)).await;
-            shared
-                .set_phase(BlePhase::Connected, Some(MOCK_DEVICE_NAME.to_string()))
-                .await;
+            pairing.stop();
+            shared.set_pairing(false).await;
         }
         BridgeCommand::Send(event) => {
+            if event.event == "pairingStart" {
+                pairing.start();
+                shared.set_pairing(true).await;
+                shared
+                    .set_enrollment(EnrollmentPhase::AwaitingDevicePair)
+                    .await;
+                sync_pairing_status(shared, pairing).await;
+                return;
+            }
+            if event.event == "pairingStop" || event.event == "unbond" {
+                pairing.stop();
+                shared.set_pairing(false).await;
+                shared.set_enrollment(EnrollmentPhase::Idle).await;
+                if event.event == "unbond" {
+                    shared.reset_secure_session(None).await;
+                }
+                return;
+            }
             apply_event(shared, pet, pairing, event).await;
         }
     }
@@ -184,6 +226,7 @@ async fn apply_event(
     if event.event == "pairingStart" {
         pairing.start();
         shared.set_pairing(true).await;
+        sync_pairing_status(shared, pairing).await;
     }
     if event.event == "pairingStop" || event.event == "unbond" {
         pairing.stop();
@@ -191,9 +234,7 @@ async fn apply_event(
     }
     shared.record_event(&event.event).await;
     pet.apply(&event);
-    shared
-        .set_simulated_pet(&pet.mode, &pet.state)
-        .await;
+    shared.set_simulated_pet(&pet.mode, &pet.state).await;
     shared.set_error(None).await;
 }
 

@@ -9,9 +9,9 @@ use tokio::sync::mpsc;
 
 use crate::ble::mock::{self, MOCK_DEVICE_NAME};
 use crate::bridge::http;
-use crate::bridge::protocol::DeskPetEvent;
+use crate::bridge::protocol::{DeskPetEvent, EventDetails};
 use crate::bridge::queue::EventQueue;
-use crate::state::Shared;
+use crate::state::{SecureSessionState, Shared};
 
 async fn wait_connected(shared: &Shared) {
     tokio::time::timeout(Duration::from_secs(2), async {
@@ -67,7 +67,9 @@ async fn bind_exact_fails_when_port_in_use() {
         .await
         .expect("hold a loopback port");
     let port = held.local_addr().expect("held addr").port();
-    let err = http::bind_exact(port).await.expect_err("port should be busy");
+    let err = http::bind_exact(port)
+        .await
+        .expect_err("port should be busy");
     assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
 }
 
@@ -153,6 +155,54 @@ async fn snapshot_includes_queued_events_without_draining() {
 }
 
 #[tokio::test]
+async fn public_status_hides_queued_event_contents() {
+    let (tx, _rx) = mpsc::channel(8);
+    let shared = Shared::new(tx);
+    let event = DeskPetEvent {
+        details: Some(EventDetails {
+            r#type: Some("ssh_login".to_string()),
+            message: Some("SSH login from 203.0.113.1".to_string()),
+        }),
+        ..DeskPetEvent::new("securityEvent")
+    };
+    shared.enqueue(event).await;
+
+    let status = serde_json::to_value(shared.public_snapshot().await).expect("serialize status");
+    assert_eq!(status["queue"], 1);
+    assert!(status.get("queue_items").is_none());
+    assert!(!status.to_string().contains("203.0.113.1"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pairing_control_events_are_commands_not_queued_ble_events() {
+    let (tx, mut rx) = mpsc::channel(8);
+    let shared = Arc::new(Shared::new(tx));
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("loopback bind");
+    let addr = listener.local_addr().expect("local addr");
+    tokio::spawn(http::serve_with_listener(shared.clone(), listener));
+
+    let response = curl_json(&[
+        "-sS",
+        "-X",
+        "POST",
+        &format!("http://{addr}/v1/cursor/event"),
+        "-H",
+        "Content-Type: application/json",
+        "-d",
+        r#"{"event":"pairingStart"}"#,
+    ]);
+
+    assert_eq!(response["ok"], true);
+    assert_eq!(shared.snapshot().await.queue, 0);
+    assert!(matches!(
+        rx.recv().await,
+        Some(crate::state::BridgeCommand::StartPairing)
+    ));
+}
+
+#[tokio::test]
 async fn roster_keeps_one_active_pet() {
     let (tx, _rx) = mpsc::channel(8);
     let shared = Shared::new(tx);
@@ -170,7 +220,10 @@ async fn roster_keeps_one_active_pet() {
         .set_active_pet("aaa".to_string())
         .await
         .expect("switch active pet");
-    assert_eq!(shared.snapshot().await.active_pet_id.as_deref(), Some("aaa"));
+    assert_eq!(
+        shared.snapshot().await.active_pet_id.as_deref(),
+        Some("aaa")
+    );
     shared.forget_active_pet().await;
     let snap = shared.snapshot().await;
     assert_eq!(snap.pets.len(), 1);
@@ -199,6 +252,34 @@ async fn mock_status_is_connected_without_hardware() {
     assert_eq!(status["device"], MOCK_DEVICE_NAME);
     assert_eq!(status["pet_mode"], "wander");
     assert_eq!(status["pet_state"], "idle");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mock_add_pet_enrolls_only_after_secure_session_ready() {
+    let (base, shared) = spawn_mock_bridge().await;
+    shared
+        .command_tx
+        .send(crate::state::BridgeCommand::AddPet)
+        .await
+        .expect("send add-pet command");
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let status = shared.snapshot().await;
+            if status.enrollment == crate::state::EnrollmentPhase::Success {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("mock enrollment did not complete");
+
+    let status = curl_json(&["-sS", &format!("{base}/v1/status")]);
+    assert_eq!(status["secure_session"], "ready");
+    assert_eq!(status["enrollment"], "success");
+    assert_eq!(status["pets"][0]["id"], "mock");
+    assert_ne!(status["last_event"], "pairingStart");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -248,13 +329,19 @@ async fn mock_rejects_unknown_event_and_accepts_pairing() {
     tokio::time::sleep(Duration::from_millis(50)).await;
     let status = curl_json(&["-sS", &format!("{base}/v1/status")]);
     assert_eq!(status["pairing_active"], true);
+    let remaining = status["pairing_remaining_seconds"]
+        .as_u64()
+        .expect("pairing countdown should be reported");
+    assert!(
+        (1..=120).contains(&remaining),
+        "unexpected countdown: {remaining}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cursor_hook_script_posts_to_simulated_bridge() {
     let (base, _) = spawn_mock_bridge().await;
-    let hook = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scripts/cursor-hook.sh");
+    let hook = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/cursor-hook.sh");
     let url = format!("{base}/v1/cursor/event");
     let status = Command::new(&hook)
         .arg("sessionStart")
@@ -287,4 +374,80 @@ async fn queued_events_flush_into_simulated_pet() {
     }
     assert_eq!(pet.mode, "agent");
     assert_eq!(pet.state, "coding");
+}
+
+#[tokio::test]
+async fn queued_events_are_gated_until_secure_session_is_ready() {
+    let (tx, _rx) = mpsc::channel(8);
+    let shared = Shared::new(tx);
+    let event = DeskPetEvent::new("sessionStart").with_state("coding");
+
+    shared.enqueue(event).await;
+    assert!(!shared.is_connected().await);
+    assert_eq!(shared.snapshot().await.queue, 1);
+    assert_eq!(
+        shared.snapshot().await.secure_session,
+        SecureSessionState::Disconnected
+    );
+
+    shared
+        .begin_secure_session("cached-id", "DP-A1B2", false)
+        .await;
+    assert!(!shared.is_connected().await);
+    assert_eq!(
+        shared.snapshot().await.secure_session,
+        SecureSessionState::Handshaking
+    );
+
+    shared
+        .mark_secure_session_ready("cached-id", "DP-A1B2")
+        .await;
+    assert!(shared.is_connected().await);
+}
+
+#[tokio::test]
+async fn disconnect_resets_secure_session_and_live_status() {
+    let (tx, _rx) = mpsc::channel(8);
+    let shared = Shared::new(tx);
+    shared
+        .begin_secure_session("cached-id", "DP-A1B2", false)
+        .await;
+    shared
+        .mark_secure_session_ready("cached-id", "DP-A1B2")
+        .await;
+    shared
+        .set_pet_status(Some("agent".to_string()), Some("thinking".to_string()))
+        .await;
+
+    shared.reset_secure_session(Some("cached-id")).await;
+
+    let snapshot = shared.snapshot().await;
+    assert!(!shared.is_connected().await);
+    assert_eq!(snapshot.ble, crate::state::BlePhase::Disconnected);
+    assert_eq!(snapshot.secure_session, SecureSessionState::Disconnected);
+    assert_eq!(snapshot.pet_mode, None);
+    assert_eq!(snapshot.pet_state, None);
+}
+
+#[tokio::test]
+async fn stale_status_updates_cannot_overwrite_a_new_session() {
+    let (tx, _rx) = mpsc::channel(8);
+    let shared = Shared::new(tx);
+    shared
+        .begin_secure_session("current-id", "DP-A1B2", false)
+        .await;
+    shared
+        .mark_secure_session_ready("current-id", "DP-A1B2")
+        .await;
+
+    assert!(
+        !shared
+            .set_pet_status_for_session(
+                "stale-id",
+                Some("sleep".to_string()),
+                Some("idle".to_string()),
+            )
+            .await
+    );
+    assert_eq!(shared.snapshot().await.pet_mode, None);
 }

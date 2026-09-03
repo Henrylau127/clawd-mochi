@@ -56,13 +56,15 @@ void SecurityEvents::drawOverlay() {
   tft.print(state_.securityTypeLabel);
 }
 
-void SecurityEvents::tick(uint32_t nowMs) {
+bool SecurityEvents::tick(uint32_t nowMs) {
   if (!state_.securityOverlayActive) {
-    return;
+    return false;
   }
   if (nowMs >= overlayEndMs_) {
     state_.securityOverlayActive = false;
     state_.securityTypeLabel[0] = '\0';
     needsRedraw_ = true;
+    return true;
   }
+  return false;
 }

@@ -12,22 +12,25 @@ BleSecurity::BleSecurity(PetStateMachine& state, Face& face, Display& display)
 
 void BleSecurity::begin() {
   pairingActive_ = false;
+  pairingWindow_.close();
+  passkeyVisible_ = false;
   state_.pairingActive = false;
 }
 
 void BleSecurity::startPairingWindow() {
   pairingActive_ = true;
-  pairingDeadlineMs_ = millis() + kPairingWindowMs;
+  pairingWindow_.open(millis(), esp_random() % 1000000UL);
   state_.pairingActive = true;
-  displayedPasskey_ = 0;
-  passkeyVisible_ = false;
+  passkeyVisible_ = true;
+  needsRedraw_ = true;
 }
 
 void BleSecurity::stopPairingWindow() {
   pairingActive_ = false;
-  pairingDeadlineMs_ = 0;
+  pairingWindow_.close();
   state_.pairingActive = false;
   passkeyVisible_ = false;
+  needsRedraw_ = true;
 }
 
 void BleSecurity::eraseBonds() {
@@ -36,13 +39,25 @@ void BleSecurity::eraseBonds() {
   state_.onUnbond();
 }
 
-void BleSecurity::onPasskeyDisplay(uint32_t passkey) {
-  if (!pairingActive_) {
+bool BleSecurity::isPairingActive() const { return pairingWindow_.isOpen(millis()); }
+
+bool BleSecurity::allowsNewBond() const { return pairingWindow_.allowsNewBond(millis()); }
+
+void BleSecurity::onPasskeyDisplay() {
+  if (!allowsNewBond()) {
     return;
   }
-  displayedPasskey_ = passkey;
   passkeyVisible_ = true;
+  needsRedraw_ = true;
   showPairingScreen();
+}
+
+void BleSecurity::onAuthenticationComplete(bool success) {
+  if (success && pairingActive_) {
+    stopPairingWindow();
+  } else {
+    needsRedraw_ = true;
+  }
 }
 
 void BleSecurity::showPairingScreen() {
@@ -57,27 +72,22 @@ void BleSecurity::showPairingScreen() {
   tft.print("Enter passkey on Mac:");
   tft.setTextSize(3);
   char code[8] = {};
-  snprintf(code, sizeof(code), "%06lu", static_cast<unsigned long>(displayedPasskey_ % 1000000UL));
+  if (passkeyVisible_) {
+    snprintf(code, sizeof(code), "%06lu",
+             static_cast<unsigned long>(pairingWindow_.passkey()));
+  } else {
+    snprintf(code, sizeof(code), "------");
+  }
   tft.setCursor(54, 145);
   tft.print(code);
 }
 
 uint32_t BleSecurity::pairingRemainingMs() const {
-  if (!pairingActive_) {
-    return 0;
-  }
-  const uint32_t now = millis();
-  if (now >= pairingDeadlineMs_) {
-    return 0;
-  }
-  return pairingDeadlineMs_ - now;
+  return pairingWindow_.remainingMs(millis());
 }
 
 void BleSecurity::tick() {
-  if (!pairingActive_) {
-    return;
-  }
-  if (millis() >= pairingDeadlineMs_) {
+  if (pairingActive_ && !pairingWindow_.isOpen(millis())) {
     stopPairingWindow();
   }
 }

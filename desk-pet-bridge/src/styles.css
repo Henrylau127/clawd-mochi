@@ -471,6 +471,16 @@ footer {
   color: #ff6961;
 }
 
+.pet-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.pairing-hint {
+  margin-bottom: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .select-stack select {
   width: 100%;
 }

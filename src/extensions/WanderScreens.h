@@ -48,5 +48,5 @@ class WanderScreens {
   void advanceScreen(uint32_t nowMs);
   void regenerateAmbientStars();
   void drawCurrent(uint32_t nowMs);
-  void drawAmbientScreen(uint32_t nowMs);
+  void drawAmbientScreen(uint32_t nowMs, bool fullRedraw);
 };

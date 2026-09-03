@@ -28,6 +28,8 @@ const ALLOWED_STATES: &[&str] = &[
     "security",
 ];
 
+const ALLOWED_SECURITY_TYPES: &[&str] = &["ssh_login", "github_login", "deployment", "sudo"];
+
 #[derive(Debug, Error)]
 pub enum ProtocolError {
     #[error("malformed json")]
@@ -103,9 +105,27 @@ impl DeskPetEvent {
         Ok(())
     }
 
+    pub fn sanitized_for_delivery(&self) -> Self {
+        let mut sanitized = self.clone();
+        sanitized.details = (sanitized.event == "securityEvent")
+            .then(|| {
+                sanitized.details.and_then(|details| {
+                    ALLOWED_SECURITY_TYPES
+                        .contains(&details.r#type.as_deref().unwrap_or_default())
+                        .then(|| EventDetails {
+                            r#type: details.r#type,
+                            message: None,
+                        })
+                })
+            })
+            .flatten();
+        sanitized
+    }
+
     pub fn to_ble_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
         self.validate()?;
-        let json = serde_json::to_vec(self).map_err(|_| ProtocolError::Serialize)?;
+        let sanitized = self.sanitized_for_delivery();
+        let json = serde_json::to_vec(&sanitized).map_err(|_| ProtocolError::Serialize)?;
         if json.len() > MAX_PAYLOAD_BYTES {
             return Err(ProtocolError::TooLarge(json.len()));
         }
@@ -114,13 +134,14 @@ impl DeskPetEvent {
 }
 
 pub fn parse_incoming(value: serde_json::Value) -> Result<DeskPetEvent, ProtocolError> {
-    let mut event: DeskPetEvent = serde_json::from_value(value).map_err(|_| ProtocolError::Malformed)?;
+    let mut event: DeskPetEvent =
+        serde_json::from_value(value).map_err(|_| ProtocolError::Malformed)?;
     event.ensure_id();
     if event.source.is_none() {
         event.source = Some("bridge".to_string());
     }
     event.validate()?;
-    Ok(event)
+    Ok(event.sanitized_for_delivery())
 }
 
 pub fn short_id() -> String {
@@ -153,5 +174,36 @@ mod tests {
     fn rejects_unknown_state() {
         let event = DeskPetEvent::new("stateUpdate").with_state("explode");
         assert!(matches!(event.validate(), Err(ProtocolError::UnknownState)));
+    }
+
+    #[test]
+    fn ble_payload_drops_detail_messages_but_keeps_allowed_security_type() {
+        let event = DeskPetEvent {
+            details: Some(EventDetails {
+                r#type: Some("ssh_login".to_string()),
+                message: Some("SSH login from 203.0.113.1".to_string()),
+            }),
+            ..DeskPetEvent::new("securityEvent")
+        };
+
+        let value: serde_json::Value =
+            serde_json::from_slice(&event.to_ble_bytes().expect("serialize")).expect("valid json");
+        assert_eq!(value["details"]["type"], "ssh_login");
+        assert!(value["details"].get("message").is_none());
+    }
+
+    #[test]
+    fn ble_payload_drops_unrecognized_security_type() {
+        let event = DeskPetEvent {
+            details: Some(EventDetails {
+                r#type: Some("raw_credential_dump".to_string()),
+                message: None,
+            }),
+            ..DeskPetEvent::new("securityEvent")
+        };
+
+        let value: serde_json::Value =
+            serde_json::from_slice(&event.to_ble_bytes().expect("serialize")).expect("valid json");
+        assert!(value.get("details").is_none());
     }
 }

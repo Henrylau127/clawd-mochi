@@ -14,7 +14,7 @@ impl EventQueue {
         if self.items.len() >= MAX_QUEUE {
             self.items.pop_front();
         }
-        self.items.push_back(event);
+        self.items.push_back(event.sanitized_for_delivery());
     }
 
     pub fn drain(&mut self) -> Vec<DeskPetEvent> {

@@ -3,6 +3,14 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type BlePhase = "disconnected" | "scanning" | "connected";
+type SecureSessionState = "disconnected" | "handshaking" | "ready";
+type EnrollmentPhase =
+  | "idle"
+  | "awaiting_device_pair"
+  | "scanning"
+  | "passkey_pending"
+  | "no_pet_found"
+  | "success";
 
 type QueueEvent = {
   id?: string | null;
@@ -19,10 +27,13 @@ type KnownPet = {
 
 type StatusSnapshot = {
   ble: BlePhase;
+  secure_session: SecureSessionState;
+  enrollment: EnrollmentPhase;
   device: string | null;
   queue: number;
   queue_items?: QueueEvent[];
   pairing_active: boolean;
+  pairing_remaining_seconds?: number | null;
   last_event: string | null;
   last_error: string | null;
   pet_mode?: string | null;
@@ -268,6 +279,9 @@ function activePet(status: StatusSnapshot): KnownPet | null {
 
 function headerSubtitle(status: StatusSnapshot): string {
   const pet = activePet(status);
+  if (status.secure_session === "handshaking" && status.device) {
+    return `Securing ${status.device}`;
+  }
   switch (status.ble) {
     case "connected":
       return status.device ?? pet?.name ?? "Connected";
@@ -344,6 +358,32 @@ function badgeFor(ble: BlePhase): { label: string; className: string } {
   }
 }
 
+function pairingHint(status: StatusSnapshot): string {
+  const remaining = status.pairing_remaining_seconds;
+  const countdown =
+    typeof remaining === "number" ? ` · ${remaining}s remaining` : "";
+  switch (status.enrollment) {
+    case "awaiting_device_pair":
+      return "Open PAIR over USB or hold GPIO9 on the pet, then wait for scanning.";
+    case "scanning":
+      return `Scanning for a device-confirmed pet${countdown}`;
+    case "passkey_pending":
+      return `Passkey pending: confirm the code shown on the pet${countdown}`;
+    case "no_pet_found":
+      return status.pairing_active
+        ? `No pet found; open PAIR on the pet and try again${countdown}`
+        : "No pet found. Open PAIR over USB or hold GPIO9, then try again.";
+    case "success":
+      return "Pet enrolled after secure session confirmation.";
+    case "idle":
+      return "Open PAIR over USB or hold GPIO9 to enroll a new pet.";
+    default: {
+      const _never: never = status.enrollment;
+      return _never;
+    }
+  }
+}
+
 async function refresh() {
   try {
     const status = await invoke<StatusSnapshot>("get_status");
@@ -396,13 +436,14 @@ async function refresh() {
     if (pairing instanceof HTMLInputElement) {
       pairing.checked = status.pairing_active;
     }
+    setText("pairing-hint", pairingHint(status));
     renderPetSelect(status);
     const forgetCopy = document.getElementById("forget-copy");
     const current = activePet(status);
     if (forgetCopy) {
       forgetCopy.textContent = current
-        ? `Remove ${current.name} from this Mac? You will need to pair it again.`
-        : "Remove the active pet from this Mac? You will need to pair it again.";
+        ? `Remove ${current.name} from the bridge? To remove its macOS Bluetooth bond too, use System Settings → Bluetooth → ${current.name} → Forget This Device.`
+        : "Remove the active pet from the bridge? Remove its macOS Bluetooth bond in System Settings → Bluetooth → the pet → Forget This Device.";
     }
   } catch (err) {
     setText("last-error", String(err));
@@ -459,14 +500,30 @@ window.addEventListener("DOMContentLoaded", () => {
   bind("close-settings", () => {
     setSettingsOpen(false);
   });
+  const invokeAction = (command: string) =>
+    invoke(command).catch((err: unknown) => {
+      setText("last-error", String(err));
+    });
+
   bind("add-pet", () => {
-    void invoke("add_pet");
+    const button = document.getElementById("add-pet");
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    }
+    void invokeAction("add_pet").finally(() => {
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+      }
+      void refresh();
+    });
   });
   bind("reconnect", () => {
-    void invoke("reconnect");
+    void invokeAction("reconnect");
   });
   bind("test-pet", () => {
-    void invoke("test_pet");
+    void invokeAction("test_pet");
   });
   bind("quit", () => {
     void invoke("quit");
@@ -546,7 +603,17 @@ window.addEventListener("DOMContentLoaded", () => {
     if (!(pairing instanceof HTMLInputElement)) {
       return;
     }
-    void invoke(pairing.checked ? "start_pairing" : "stop_pairing");
+    const requested = pairing.checked;
+    pairing.disabled = true;
+    void invoke(requested ? "start_pairing" : "stop_pairing")
+      .catch((err: unknown) => {
+        pairing.checked = !requested;
+        setText("last-error", String(err));
+      })
+      .finally(() => {
+        pairing.disabled = false;
+        void refresh();
+      });
   });
 
   const providerSelect = document.getElementById("provider");

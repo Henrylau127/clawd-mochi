@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tauri::image::Image;
@@ -65,7 +65,10 @@ fn toggle_popover(app: &AppHandle) {
         }
     }
 
-    let _ = window.as_ref().window().move_window(Position::TrayBottomCenter);
+    let _ = window
+        .as_ref()
+        .window()
+        .move_window(Position::TrayBottomCenter);
     let _ = window.show();
     let _ = window.set_focus();
 }

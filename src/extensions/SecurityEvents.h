@@ -15,7 +15,7 @@ class SecurityEvents {
   SecurityEvents(PetStateMachine& state, Face& face, Display& display);
 
   void trigger(const char* typeLabel);
-  void tick(uint32_t nowMs);
+  bool tick(uint32_t nowMs);
   bool isActive() const;
   bool needsRedraw() const { return needsRedraw_; }
   void clearRedraw() { needsRedraw_ = false; }

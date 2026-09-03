@@ -89,13 +89,13 @@ TransitionResult PetStateMachine::onSessionStart(const char* state) {
   if (mode == PetMode::SLEEP) {
     return TransitionResult::IGNORED;
   }
-  attentionActive = false;
-  attentionLevel = AttentionLevel::NONE;
-  mode = PetMode::AGENT;
   AgentExpression parsed = AgentExpression::CODING;
   if (state != nullptr && !parseExpression(state, parsed)) {
     return TransitionResult::INVALID;
   }
+  attentionActive = false;
+  attentionLevel = AttentionLevel::NONE;
+  mode = PetMode::AGENT;
   expression = parsed;
   return TransitionResult::OK;
 }
@@ -188,7 +188,6 @@ TransitionResult PetStateMachine::onSecurityEvent(const char* typeLabel) {
   if (mode == PetMode::SLEEP) {
     return TransitionResult::IGNORED;
   }
-  expression = AgentExpression::SECURITY;
   return TransitionResult::OK;
 }
 

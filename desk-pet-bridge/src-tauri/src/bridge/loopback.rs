@@ -117,7 +117,9 @@ pub fn save_roster(roster: &PetRoster) -> Result<(), String> {
 }
 
 pub fn load_saved_port() -> Option<u16> {
-    load_sidecar()?.port.filter(|port| validate_port(*port).is_ok())
+    load_sidecar()?
+        .port
+        .filter(|port| validate_port(*port).is_ok())
 }
 
 pub fn load_saved_provider() -> String {

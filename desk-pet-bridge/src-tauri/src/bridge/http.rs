@@ -163,7 +163,7 @@ async fn test_pet(State(http): State<HttpState>, Json(body): Json<Value>) -> imp
 }
 
 async fn status(State(http): State<HttpState>) -> impl IntoResponse {
-    let snapshot = http.shared.snapshot().await;
+    let snapshot = http.shared.public_snapshot().await;
     (StatusCode::OK, Json(snapshot))
 }
 
@@ -184,18 +184,31 @@ async fn power(State(http): State<HttpState>, Json(body): Json<PowerBody>) -> im
 }
 
 async fn pairing_start(State(http): State<HttpState>) -> impl IntoResponse {
-    let mut event = DeskPetEvent::new("pairingStart");
-    event.ensure_id();
-    enqueue_or_send(&http.shared, event).await
+    request_command(&http.shared, BridgeCommand::StartPairing).await
 }
 
 async fn pairing_stop(State(http): State<HttpState>) -> impl IntoResponse {
-    let mut event = DeskPetEvent::new("pairingStop");
-    event.ensure_id();
-    enqueue_or_send(&http.shared, event).await
+    request_command(&http.shared, BridgeCommand::StopPairing).await
+}
+
+async fn request_command(shared: &Shared, command: BridgeCommand) -> (StatusCode, Json<Value>) {
+    match shared.command_tx.send(command).await {
+        Ok(()) => (StatusCode::ACCEPTED, Json(json!({ "ok": true }))),
+        Err(err) => json_error(StatusCode::SERVICE_UNAVAILABLE, &err.to_string()),
+    }
 }
 
 async fn enqueue_or_send(shared: &Shared, event: DeskPetEvent) -> (StatusCode, Json<Value>) {
+    let control = match event.event.as_str() {
+        "pairingStart" => Some(BridgeCommand::StartPairing),
+        "pairingStop" => Some(BridgeCommand::StopPairing),
+        "unbond" => Some(BridgeCommand::Unbond),
+        _ => None,
+    };
+    if let Some(command) = control {
+        return request_command(shared, command).await;
+    }
+
     shared.record_event(&event.event).await;
     if shared.is_connected().await {
         if shared

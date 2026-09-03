@@ -1,6 +1,6 @@
 # Mac validation guide
 
-This document describes how to run the Desk Pet firmware and Tauri menu-bar bridge on macOS. Firmware that already passed WSL Tiers 0–2 is documented in [wsl-validation.md](wsl-validation.md).
+This document describes how to run the Desk Pet firmware and Tauri menu-bar bridge on macOS. Firmware that already passed WSL Tiers 0–2 is documented in [wsl-validation.md](wsl-validation.md). Session wrap-up (done vs remaining) is in [mac-bridge-status.md](mac-bridge-status.md).
 
 ## Restore host tools
 
@@ -76,9 +76,16 @@ Checklist:
 
 1. Menu-bar icon opens a popover panel (not a dropdown that launches a separate window).
 2. macOS Bluetooth permission prompt is accepted.
-3. Tray **Start pairing** (or serial `PAIR`) opens the 120s window; passkey is on the TFT.
-4. `curl -s http://127.0.0.1:8765/v1/status` shows `connected` and a `DP-` name.
+3. Start the device-side pairing window with serial `PAIR` or a GPIO9 long-press, then use
+   Settings → **Add pet**. The bridge shows scanning and passkey-pending states, performs a secure
+   GATT handshake, and the passkey appears on the TFT. With no advertising ESP32, Add pet correctly
+   enrolls nothing — see [mac-bridge-status.md](mac-bridge-status.md).
+4. `curl -s http://127.0.0.1:8765/v1/status` shows `connected` and a `DP-` name only after the
+   encrypted status read, mandatory status subscription, and firmware secure-session confirmation.
 5. `curl -s -X POST http://127.0.0.1:8765/v1/test -H 'Content-Type: application/json' -d '{"state":"coding"}'` changes the face.
 6. Cursor hooks in `.cursor/hooks.json` POST to the same loopback port.
+
+The bridge cannot programmatically remove a CoreBluetooth bond. After **Remove pet**, use System
+Settings → Bluetooth → the pet → **Forget This Device** before enrolling it again.
 
 See [desk-pet-bridge/README.md](../desk-pet-bridge/README.md) for API details.

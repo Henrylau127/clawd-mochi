@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::time::Instant;
 use tokio::sync::{mpsc, watch, Mutex};
 
 use crate::bridge::loopback::{self, DEFAULT_PORT};
@@ -11,6 +12,25 @@ pub enum BlePhase {
     Disconnected,
     Scanning,
     Connected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecureSessionState {
+    Disconnected,
+    Handshaking,
+    Ready,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EnrollmentPhase {
+    Idle,
+    AwaitingDevicePair,
+    Scanning,
+    PasskeyPending,
+    NoPetFound,
+    Success,
 }
 
 #[derive(Debug, Clone)]
@@ -26,10 +46,41 @@ pub enum BridgeCommand {
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusSnapshot {
     pub ble: BlePhase,
+    pub secure_session: SecureSessionState,
+    pub enrollment: EnrollmentPhase,
     pub device: Option<String>,
     pub queue: usize,
     pub queue_items: Vec<DeskPetEvent>,
     pub pairing_active: bool,
+    pub pairing_remaining_seconds: Option<u64>,
+    pub last_event: Option<String>,
+    pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pet_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pet_state: Option<String>,
+    pub loopback_host: String,
+    pub loopback_port: u16,
+    pub loopback_addr: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loopback_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loopback_note: Option<String>,
+    pub provider: String,
+    pub pets: Vec<loopback::KnownPet>,
+    pub active_pet_id: Option<String>,
+    pub ts: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PublicStatusSnapshot {
+    pub ble: BlePhase,
+    pub secure_session: SecureSessionState,
+    pub enrollment: EnrollmentPhase,
+    pub device: Option<String>,
+    pub queue: usize,
+    pub pairing_active: bool,
+    pub pairing_remaining_seconds: Option<u64>,
     pub last_event: Option<String>,
     pub last_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -58,8 +109,12 @@ struct LoopbackStatus {
 
 struct BridgeInner {
     ble: BlePhase,
+    secure_session: SecureSessionState,
+    enrollment: EnrollmentPhase,
     device: Option<String>,
+    session_id: Option<String>,
     pairing_active: bool,
+    pairing_deadline: Option<Instant>,
     last_event: Option<String>,
     last_error: Option<String>,
     simulated_mode: Option<String>,
@@ -84,8 +139,12 @@ impl Shared {
         Self {
             inner: Mutex::new(BridgeInner {
                 ble: BlePhase::Disconnected,
+                secure_session: SecureSessionState::Disconnected,
+                enrollment: EnrollmentPhase::Idle,
                 device: None,
+                session_id: None,
                 pairing_active: false,
+                pairing_deadline: None,
                 last_event: None,
                 last_error: None,
                 simulated_mode: None,
@@ -120,12 +179,20 @@ impl Shared {
         let port = loopback.port;
         let provider = self.provider.lock().await.clone();
         let roster = self.roster.lock().await.clone();
+        let pairing_remaining_seconds = inner.pairing_deadline.and_then(|deadline| {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0);
+            (seconds > 0).then_some(seconds)
+        });
         StatusSnapshot {
             ble: inner.ble,
+            secure_session: inner.secure_session,
+            enrollment: inner.enrollment,
             device: inner.device.clone(),
             queue,
             queue_items,
-            pairing_active: inner.pairing_active,
+            pairing_active: pairing_remaining_seconds.is_some(),
+            pairing_remaining_seconds,
             last_event: inner.last_event.clone(),
             last_error: inner.last_error.clone(),
             pet_mode: inner.simulated_mode.clone(),
@@ -145,6 +212,32 @@ impl Shared {
         }
     }
 
+    pub async fn public_snapshot(&self) -> PublicStatusSnapshot {
+        let snapshot = self.snapshot().await;
+        PublicStatusSnapshot {
+            ble: snapshot.ble,
+            secure_session: snapshot.secure_session,
+            enrollment: snapshot.enrollment,
+            device: snapshot.device,
+            queue: snapshot.queue,
+            pairing_active: snapshot.pairing_active,
+            pairing_remaining_seconds: snapshot.pairing_remaining_seconds,
+            last_event: snapshot.last_event,
+            last_error: snapshot.last_error,
+            pet_mode: snapshot.pet_mode,
+            pet_state: snapshot.pet_state,
+            loopback_host: snapshot.loopback_host,
+            loopback_port: snapshot.loopback_port,
+            loopback_addr: snapshot.loopback_addr,
+            loopback_error: snapshot.loopback_error,
+            loopback_note: snapshot.loopback_note,
+            provider: snapshot.provider,
+            pets: snapshot.pets,
+            active_pet_id: snapshot.active_pet_id,
+            ts: snapshot.ts,
+        }
+    }
+
     pub async fn set_phase(&self, ble: BlePhase, device: Option<String>) {
         let mut inner = self.inner.lock().await;
         inner.ble = ble;
@@ -153,11 +246,96 @@ impl Shared {
         }
         if ble == BlePhase::Disconnected {
             inner.device = None;
+            inner.session_id = None;
+            inner.secure_session = SecureSessionState::Disconnected;
+            inner.simulated_mode = None;
+            inner.simulated_state = None;
+        } else if ble == BlePhase::Scanning {
+            inner.secure_session = SecureSessionState::Disconnected;
+            inner.session_id = None;
         }
     }
 
+    pub async fn begin_secure_session(&self, id: &str, device: &str, enrolling: bool) {
+        let mut inner = self.inner.lock().await;
+        inner.ble = BlePhase::Scanning;
+        inner.device = Some(device.to_string());
+        inner.session_id = Some(id.to_string());
+        inner.secure_session = SecureSessionState::Handshaking;
+        if enrolling {
+            inner.enrollment = EnrollmentPhase::PasskeyPending;
+        }
+    }
+
+    pub async fn mark_secure_session_ready(&self, id: &str, device: &str) {
+        let mut inner = self.inner.lock().await;
+        inner.ble = BlePhase::Connected;
+        inner.device = Some(device.to_string());
+        inner.session_id = Some(id.to_string());
+        inner.secure_session = SecureSessionState::Ready;
+        if inner.enrollment != EnrollmentPhase::Idle {
+            inner.enrollment = EnrollmentPhase::Success;
+        }
+    }
+
+    pub async fn reset_secure_session(&self, expected_id: Option<&str>) {
+        let mut inner = self.inner.lock().await;
+        if expected_id.is_some() && inner.session_id.as_deref() != expected_id {
+            return;
+        }
+        inner.ble = BlePhase::Disconnected;
+        inner.device = None;
+        inner.session_id = None;
+        inner.secure_session = SecureSessionState::Disconnected;
+        inner.simulated_mode = None;
+        inner.simulated_state = None;
+    }
+
+    pub async fn set_enrollment(&self, phase: EnrollmentPhase) {
+        self.inner.lock().await.enrollment = phase;
+    }
+
+    pub async fn set_pet_status(&self, mode: Option<String>, state: Option<String>) {
+        let mut inner = self.inner.lock().await;
+        if mode.is_some() {
+            inner.simulated_mode = mode;
+        }
+        if state.is_some() {
+            inner.simulated_state = state;
+        }
+    }
+
+    pub async fn set_pet_status_for_session(
+        &self,
+        id: &str,
+        mode: Option<String>,
+        state: Option<String>,
+    ) -> bool {
+        let mut inner = self.inner.lock().await;
+        if inner.session_id.as_deref() != Some(id) {
+            return false;
+        }
+        if mode.is_some() {
+            inner.simulated_mode = mode;
+        }
+        if state.is_some() {
+            inner.simulated_state = state;
+        }
+        true
+    }
+
     pub async fn set_pairing(&self, active: bool) {
-        self.inner.lock().await.pairing_active = active;
+        let mut inner = self.inner.lock().await;
+        inner.pairing_active = active;
+        if !active {
+            inner.pairing_deadline = None;
+        }
+    }
+
+    pub async fn set_pairing_deadline(&self, deadline: Option<Instant>) {
+        let mut inner = self.inner.lock().await;
+        inner.pairing_deadline = deadline;
+        inner.pairing_active = deadline.is_some();
     }
 
     pub async fn record_event(&self, event: &str) {
@@ -175,7 +353,8 @@ impl Shared {
     }
 
     pub async fn is_connected(&self) -> bool {
-        self.inner.lock().await.ble == BlePhase::Connected
+        let inner = self.inner.lock().await;
+        inner.ble == BlePhase::Connected && inner.secure_session == SecureSessionState::Ready
     }
 
     pub async fn enqueue(&self, event: DeskPetEvent) -> usize {
@@ -250,10 +429,7 @@ impl Shared {
 
     pub async fn set_active_pet(&self, id: String) -> Result<String, String> {
         let mut roster = self.roster.lock().await;
-        let exists = roster
-            .pets
-            .iter()
-            .any(|pet| pet.id == id || pet.name == id);
+        let exists = roster.pets.iter().any(|pet| pet.id == id || pet.name == id);
         if !exists {
             return Err("That pet is not paired yet.".to_string());
         }

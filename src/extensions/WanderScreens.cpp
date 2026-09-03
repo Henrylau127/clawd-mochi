@@ -43,13 +43,18 @@ void WanderScreens::regenerateAmbientStars() {
   }
 }
 
-void WanderScreens::drawAmbientScreen(uint32_t nowMs) {
+void WanderScreens::drawAmbientScreen(uint32_t nowMs, bool fullRedraw) {
   Adafruit_ST7789& tft = display_.tft();
   const uint16_t bg = tft.color565(12, 18, 40);
   display_.setAnimBgColor(bg);
-  tft.fillScreen(bg);
+  if (fullRedraw) {
+    tft.fillScreen(bg);
+  }
   for (uint8_t i = 0; i < kStarCount; i++) {
     const AmbientStar& star = stars_[i];
+    if (!fullRedraw) {
+      tft.fillRect(star.x, star.y, 2, 2, bg);
+    }
     const uint8_t wave = static_cast<uint8_t>(((nowMs >> 8) + star.phase) & 0xFF);
     const uint8_t bright = wave < 128 ? static_cast<uint8_t>(wave * 2)
                                       : static_cast<uint8_t>((255 - wave) * 2);
@@ -69,14 +74,15 @@ void WanderScreens::drawCurrent(uint32_t nowMs) {
       break;
     }
     case WanderScreen::AMBIENT:
-      drawAmbientScreen(nowMs);
+      drawAmbientScreen(nowMs, !idlePrimed_);
+      idlePrimed_ = true;
       break;
   }
   lastAnimMs_ = nowMs;
 }
 
 void WanderScreens::tick(uint32_t nowMs) {
-  if (state_.mode != PetMode::WANDER || state_.bleConnected || state_.securityOverlayActive) {
+  if (state_.mode != PetMode::WANDER || state_.securityOverlayActive) {
     return;
   }
 

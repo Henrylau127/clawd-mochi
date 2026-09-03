@@ -3,242 +3,172 @@
   <img src="pics/clawd_mochi_banner.png" alt="Clawd Mochi Logo" width="700"/>
 </p>
 
-# Clawd Mochi 🦀🤖
+# Clawd Mochi Desk Pet
 
-A physical desk companion inspired by **Clawd** — the pixel-crab mascot of Claude Code by Anthropic. An ESP32-C3 drives a 1.54" color TFT display and hosts a mobile web controller — no app, no internet, no cloud required.
+A physical desk companion derived from the independent Clawd Mochi fan project. The current repository contains modular ESP32-C3 firmware, a 1.54-inch ST7789 display driver and face graphics, a BLE transport, serial diagnostics, host tests, and a macOS Tauri menu-bar bridge for Cursor events.
 
-**Cost: ~$6–8 · Build time: ~1 hour · Skill level: Beginner**
+> This is an independent fan project. It is not affiliated with, sponsored by, or endorsed by Anthropic. “Claude” and “Clawd” are trademarks of Anthropic.
 
-Support the project on Instagram: [![Instagram](https://img.shields.io/badge/Instagram-E4405F?logo=instagram&logoColor=fff&style=for-the-badge)](https://instagram.com/clawd.mochi)
+## Current architecture
 
-📦 3D printable case on MakerWorld: [https://makerworld.com/en/models/2559505-clawd-mochi-physical-claude-code-mascot#profileId-2820000](https://makerworld.com/en/models/2559505-clawd-mochi-physical-claude-code-mascot#profileId-2820000)
+The production firmware is BLE-first. It does not host a Wi-Fi access point, web server, or phone controller. USB-C is used for power, flashing, and serial recovery. The macOS bridge receives local Cursor hook events and sends compact JSON over authenticated, encrypted BLE.
 
----
+- `WANDER` runs local idle, quote, and ambient screens while the pet is disconnected.
+- `AGENT` displays coding, thinking, idle, waiting, and error states.
+- `SLEEP` turns the backlight off.
+- Attention escalation, quota display, and security-event overlays are implemented in `src/extensions/`.
+- Firmware is organized under `src/`; it is not required to remain a single file.
 
-> ⚠️ This is an independent fan project. It is not affiliated with, sponsored by, or endorsed by Anthropic. "Claude" and "Clawd" are trademarks of Anthropic.
+See the [product requirements](docs/esp32-desk-pet-prd.md), [firmware plan](docs/desk-pet-firmware-plan.md), and [graphics and Cursor notes](docs/graphics-and-cursor.md) for design details.
 
----
+## Hardware and wiring
 
-<p align="center">
-  <img src="pics/clawd_mochi_3_4.jpeg" alt="Assembled Clawd Mochi on a desk" width="500"/>
-  &nbsp;
-  <img src="pics/clawd_mochi_claude_code.jpeg" alt="Claude Code view" width="500"/>
-</p>
+The reference build uses an **ESP32-C3 Super Mini** and an **ST7789 1.54-inch 240x240 SPI TFT**. Connect display power to **3.3V only**.
 
-## What it does
+| ST7789 pin | ESP32-C3 Super Mini |
+|------------|--------------------|
+| VCC | 3V3 |
+| GND | GND |
+| SDA / MOSI | GPIO10 |
+| SCL / SCK | GPIO8 |
+| RES | GPIO2 |
+| DC | GPIO1 |
+| CS | GPIO4 |
+| BL | GPIO3 |
 
-Clawd Mochi sits on your desk and shows animated expressions on a small color display. You control it from any phone or browser by connecting to its built-in WiFi hotspot:
+The BOOT button is GPIO9 and a long press opens the temporary pairing window.
 
-- **Normal eyes** — pixel-art square eyes with wiggle and blink animations
-- **Squish eyes** — `> <` happy squint with open/close animation
-- **Claude Code** — displays "Claude Code" with an interactive terminal
-- **Canvas** — draw anything on the display from your phone in real time
+## PlatformIO and pioarduino
 
----
+The project uses PlatformIO with the pioarduino ESP32 platform URL declared in [`platformio.ini`](platformio.ini). The default environment is `esp32-c3-super-mini`; the debug environment adds ASCII face previews and extra diagnostics.
 
-## Parts list
+Use the pioarduino PlatformIO CLI at `~/.platformio/penv/bin/pio` (or the pioarduino IDE extension):
 
-| Part                | Spec                             | ~Price |
-| ------------------- | -------------------------------- | ------ |
-| ESP32-C3 Super Mini | microcontroller with WiFi        | ~$2.50 |
-| ST7789 1.54" TFT    | 240×240 SPI color display        | ~$3.00 |
-| 8 short wires       | 8–10 cm Dupont / jumper wires    | ~$0.50 |
-| 2× M2×6mm screws    | to mount display bezel           | ~$0.10 |
-| Double-sided tape   | to secure components inside case | ~$0.10 |
-| USB-C cable         | for power                        | —      |
-| 3D printed case     | PLA or PETG, ~30g                | ~$0.50 |
-
-**Total: ~$7–8**
-
----
-
-## Wiring
-
-> ⚠️ Connect VCC to **3.3V only** — never 5V. Use GPIO 8 and 10 for SPI (hardware SPI, fast). Do not use GPIO 6/7 for SPI.
-
-| Display pin | ESP32-C3 GPIO  | Wire color (suggested) |
-| ----------- | -------------- | ---------------------- |
-| VCC         | 3V3            | Red                    |
-| GND         | GND            | Black                  |
-| SDA         | GPIO 10 (MOSI) | Orange                 |
-| SCL         | GPIO 8 (SCK)   | Green                  |
-| RES         | GPIO 2         | Purple                 |
-| DC          | GPIO 1         | Blue                   |
-| CS          | GPIO 4         | White                  |
-| BL          | GPIO 3         | Yellow                 |
-
----
-
-## Software setup
-
-### Step 1 — Install Arduino IDE
-
-Download [Arduino IDE 2.x](https://www.arduino.cc/en/software) and install it.
-
-### Step 2 — Add ESP32 board support
-
-1. Open Arduino IDE → **File → Preferences**
-2. In "Additional boards manager URLs" paste:
-   ```
-   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-   ```
-3. Go to **Tools → Board → Boards Manager**, search `esp32`, install **"esp32 by Espressif Systems"**
-
-### Step 3 — Install libraries
-
-Go to **Tools → Library Manager** and install both:
-
-- `Adafruit GFX Library`
-- `Adafruit ST7735 and ST7789 Library`
-
-### Step 4 — Configure board settings
-
-Go to **Tools** and set:
-
-| Setting         | Value                   |
-| --------------- | ----------------------- |
-| Board           | ESP32C3 Dev Module      |
-| USB CDC On Boot | **Enabled** ← important |
-| CPU Frequency   | 160 MHz                 |
-| Upload Speed    | 921600                  |
-
-### Step 5 — Upload the sketch
-
-1. Clone or download this repo
-2. Open `clawd_mochi/clawd_mochi.ino` in Arduino IDE
-3. Connect the ESP32 via USB-C
-4. Select the correct port under **Tools → Port**
-5. Click **Upload** (→ arrow button)
-6. Wait for "Hard resetting via RTS pin..." — this means success
-
----
-
-## How to use it
-
-### Connect and open the controller
-
-1. Power the ESP32 via USB-C (any USB charger or power bank)
-2. Wait ~3 seconds for the boot animation to finish
-3. On your phone or computer, go to **WiFi settings**
-4. Connect to the network: **`ClaWD-Mochi`** · password: **`clawd1234`**
-5. Open a browser and go to **`http://192.168.4.1`**
-
-You should see the web controller:
-
-<img src="pics/clawd_mochi_webpage.jpeg" alt="Webpage view" width="500"/>
-
-### Controller features
-
-| Button / control   | What it does                                    |
-| ------------------ | ----------------------------------------------- |
-| Normal eyes        | Plays wiggle + blink animation                  |
-| Squish eyes        | Plays open/close animation                      |
-| Claude Code        | Shows code display, opens terminal              |
-| Canvas             | Enter drawing mode — draw on display from phone |
-| Speed slider       | Controls animation speed (slow / normal / fast) |
-| Background color   | Changes background color of all views           |
-| Pen color          | Sets drawing color for canvas                   |
-| Display on/off     | Toggles the backlight                           |
-| ✓ done (in canvas) | Exits canvas mode                               |
-
----
-
-## 3D case
-
-The electronics case (body + back) is in the `clawd_mochi` model folder:
-
-| File                                                                                 | Description                               |
-| ------------------------------------------------------------------------------------ | ----------------------------------------- |
-| [`./models/clawd_mochi/clawd_mochi_v1.stl`](./models/clawd_mochi/clawd_mochi_v1.stl) | Main case layout with body and back parts |
-
-### Print settings
-
-| Setting      | Value                               |
-| ------------ | ----------------------------------- |
-| Material     | PLA or PETG                         |
-| Layer height | 0.15–0.20 mm                        |
-| Infill       | 15% gyroid                          |
-| Supports     | Yes — for display window overhang   |
-| Orientation  | Face-down, flat back on build plate |
-
-Suggested colors: orange PLA for body, matte black for back plate.
-
-You can also download the models from MakerWorld: [https://makerworld.com/en/models/2559505-clawd-mochi-physical-claude-code-mascot#profileId-2820000](https://makerworld.com/en/models/2559505-clawd-mochi-physical-claude-code-mascot#profileId-2820000)
-
-### 3D Clawd (no electronics)
-
-If you just want a display piece, use the separate 3D Clawd model (no screen or electronics cutouts).
-
-<img src="pics/clawd_3D_squished_eyes_4_3.png" alt="3D printed Clawd model with squished eyes" width="500"/>
-
-Model files:
-
-| File | Description |
-| ---- | ----------- |
-| [`./models/clawd_3d/clawd_3D_no_AMS.stl`](./models/clawd_3d/clawd_3D_no_AMS.stl) | Original Clawd 3D model |
-| [`./models/clawd_3d_squished_eyes/clawd_3D_squished_eyes_no_AMS.stl`](./models/clawd_3d_squished_eyes/clawd_3D_squished_eyes_no_AMS.stl) | Squished eyes variant |
-
-You can also download the models from MakerWorld: [https://makerworld.com/en/models/2576503-clawd-claude-code-mascot#profileId-2841183](https://makerworld.com/en/models/2576503-clawd-claude-code-mascot#profileId-2841183)
-
----
-
-## Assembly tips
-
-1. Print the case file (body + back) and test-fit the display before gluing anything
-2. Thread the 8 wires through the back plate slot before soldering
-3. Use double-sided tape to fix the ESP32 against the inside of the back plate
-4. Secure the display with 2× M2×6mm screws through the bezel holes
-5. Route the USB-C cable through the back plate slot and snap the back on
-
----
-
-## Customisation
-
-### Eye size and position
-
-Edit these constants near the top of `clawd_mochi.ino`:
-
-```cpp
-#define EYE_W   30    // eye width in pixels
-#define EYE_H   60    // eye height in pixels
-#define EYE_GAP 120   // gap between eyes
-#define EYE_OX  0     // horizontal offset
-#define EYE_OY  40    // vertical offset upward
+```bash
+~/.platformio/penv/bin/pio run -e esp32-c3-super-mini
+~/.platformio/penv/bin/pio run -e esp32-c3-super-mini-debug
 ```
 
-### Logo animation duration
+Run the native protocol tests:
 
-```cpp
-// In animLogoReveal() — how long logo holds after animation
-delay(1500);       // milliseconds — change this number
-
-// Speed of the reveal drawing stroke by stroke
-delay(speedMs(8)); // lower = faster
+```bash
+~/.platformio/penv/bin/pio test -e native -f test_protocol
 ```
 
----
+The no-hardware Tier 0 helper runs both firmware builds and the host test:
 
-## Contributing
+```bash
+./scripts/validate-tier0.sh
+```
 
-Contributions are very welcome! Here are some ideas:
+## USB-C flashing and serial diagnostics
 
-- **New animations** — add new expressions, transitions, or idle behaviors
-- **New views** — weather display, clock, notification badges, pixel art scenes
-- **Sound** — add a small buzzer for sound effects
-- **Sensors** — connect a touch sensor or button for physical interaction
-- **OTA updates** — add over-the-air firmware updates
-- **MQTT / Home Assistant** — connect to smart home platforms
+Connect the ESP32-C3 by a data-capable USB-C cable. On macOS, list native USB serial devices and upload with:
 
-To contribute: fork the repo, make your changes, and open a pull request. Please keep the single-file structure (`clawd_mochi.ino`) so it stays easy for beginners to flash.
+```bash
+ls /dev/cu.usb*
+~/.platformio/penv/bin/pio run -t upload -e esp32-c3-super-mini
+~/.platformio/penv/bin/pio device monitor -b 115200
+```
+
+If the port is missing, unplug and reconnect the board. If upload does not start, hold **BOOT** while tapping reset and retry. The firmware uses native USB CDC at 115200 baud and prints a redacted boot banner with firmware version, device suffix, and heap information.
+
+Useful commands in the serial monitor:
+
+```text
+STATUS
+TEST coding
+TEST thinking
+TEST idle
+TEST waiting
+TEST error
+TEST security
+WANDER
+PAIR
+UNBOND
+SLEEP
+WAKE
+HELP
+```
+
+`STATUS` returns one-line JSON; `PAIR` opens a 120-second pairing window, `UNBOND` clears stored bonds, and `WANDER` exits a forced agent state. Do not put passkeys, bond keys, tokens, or other sensitive data in logs.
+
+For WSL2 USB passthrough and the complete serial checklist, see [WSL validation](docs/wsl-validation.md). For macOS setup and commands, see [Mac validation](docs/mac-validation.md).
+
+## BLE-first security
+
+The device advertises a generic name in the form **`DP-<last4-MAC>`**, such as `DP-A1B2`. The suffix is a troubleshooting identifier; the advertisement does not contain user, project, Cursor, quota, security-event, or Wi-Fi data.
+
+An explicit 120-second pairing window can be opened from the bridge, with serial `PAIR`, or with a
+GPIO9 long press. NimBLE uses LE Secure Connections, authenticated/encrypted GATT permissions, and
+NVS bond persistence. The Mac bridge performs a secure GATT handshake before accepting the
+connection; the TFT displays the passkey whenever a new authentication attempt begins. Command,
+configuration, and status access remain protected, and a successful bond should reconnect without
+another PIN.
+
+## macOS Tauri bridge
+
+The [`desk-pet-bridge/`](desk-pet-bridge/) directory contains a Tauri v2 menu-bar app. It scans for `DP-*`, connects through macOS CoreBluetooth via `btleplug`, queues events while reconnecting, and forwards Cursor hooks from `.cursor/hooks.json`.
+
+Install and run it on macOS:
+
+```bash
+./scripts/check-mac-env.sh
+cd desk-pet-bridge
+pnpm install
+pnpm tauri dev
+```
+
+Accept the macOS Bluetooth permission prompt. For first enrollment, open `PAIR` over USB or hold
+GPIO9 on the pet, then use **Settings → Add pet** and confirm the passkey shown on the TFT. The
+passkey is only needed for the initial bond. To remove the macOS bond, use System Settings >
+Bluetooth > the pet > **Forget This Device**; the bridge cannot invoke CoreBluetooth unpairing.
+
+The bridge API binds only to loopback:
+
+```bash
+curl -s http://127.0.0.1:8765/v1/status
+curl -s -X POST http://127.0.0.1:8765/v1/test \
+  -H 'Content-Type: application/json' \
+  -d '{"state":"coding"}'
+```
+
+It also supports `POST /v1/cursor/event`, `POST /v1/power`, `POST /v1/pairing/start`, and `POST /v1/pairing/stop`. Pairing endpoints provide enrollment guidance; they do not remotely authorize a new bond. The full API and bridge behavior are documented in [`desk-pet-bridge/README.md`](desk-pet-bridge/README.md).
+
+Without hardware, run the in-process `DP-TEST` BLE mock:
+
+```bash
+./scripts/validate-host.sh
+cd desk-pet-bridge
+DESKPET_BLE_MOCK=1 pnpm tauri dev
+curl -s http://127.0.0.1:8765/v1/status
+```
+
+Mock mode validates the bridge and loopback API but does not validate CoreBluetooth, radio pairing, the TFT, or physical hardware.
+
+## Recovery sketch
+
+If the modular firmware or wiring needs a known-good display check, flash [`sketches/clawd_mochi_recovery/clawd_mochi.ino`](sketches/clawd_mochi_recovery/clawd_mochi.ino) with Arduino IDE 2 on Windows. This recovery-only sketch preserves the original Clawd Mochi Wi-Fi soft AP and web canvas; production firmware does not.
+
+## Validation tiers and blockers
+
+Validation is intentionally staged:
+
+1. **Tier 0, no hardware:** PlatformIO firmware builds and native `test_protocol` pass.
+2. **Tier 1, USB:** flash succeeds and the serial boot banner appears.
+3. **Tier 2, USB:** `STATUS`, `TEST`, pairing, bond, sleep, wake, and help diagnostics work.
+4. **Tier 3, phone:** nRF Connect verifies `DP-<last4-MAC>` advertising, pairing, encrypted writes, and reboot reconnect. **Blocked on a phone and physical ESP32.**
+5. **Tier 4, manual display:** a person confirms TFT expressions and overlays match the reported state. **Blocked on the assembled display and human inspection.**
+6. **Tier 5, Mac BLE:** CoreBluetooth pairing, encrypted GATT writes, reconnect, bridge API, and Cursor hooks work end to end. **Blocked on a Mac plus powered, advertising ESP32 hardware.**
+
+See the [Mac session status](docs/mac-bridge-status.md) for the current done/remaining list and the [validation guides](docs/wsl-validation.md) and [Mac validation](docs/mac-validation.md) for procedures.
+
+## Case and project context
+
+The original project includes display and media assets under [`pics/`](pics/). A reference case is also available on [MakerWorld](https://makerworld.com/en/models/2559505-clawd-mochi-physical-claude-code-mascot#profileId-2820000). The original Clawd Mochi graphics remain the visual starting point for the modular firmware.
+
+Contributions are welcome, including new local animations, screens, sensors, and bridge adapters. Keep changes aligned with the documented BLE-first architecture and validation tiers.
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
-**Note:** 3D models and media assets are licensed under **CC BY-NC-SA 4.0**.
-
----
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=yousifamanuel/clawd-mochi)](https://www.star-history.com/#yousifamanuel/clawd-mochi)
+Source code is licensed under the [MIT License](LICENSE). 3D models and media assets are licensed under **CC BY-NC-SA 4.0** where applicable.

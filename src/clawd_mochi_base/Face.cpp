@@ -179,6 +179,12 @@ void Face::drawNormalEyes(int16_t ox, bool blink, bool clearBackground) {
 }
 
 void Face::drawWanderIdle(bool blinkOpen, int16_t lookOffset, bool fullRedraw) {
+  if (!fullRedraw) {
+    Adafruit_ST7789& tft = display_.tft();
+    const int16_t y = eyeY();
+    tft.fillRect(eyeLX(-6), y, EYE_W + 12, EYE_H, display_.animBgColor());
+    tft.fillRect(eyeRX(-6), y, EYE_W + 12, EYE_H, display_.animBgColor());
+  }
   drawNormalEyes(lookOffset, !blinkOpen, fullRedraw);
 }
 
