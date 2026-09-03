@@ -69,6 +69,7 @@ pub struct StatusSnapshot {
     pub provider: String,
     pub pets: Vec<loopback::KnownPet>,
     pub active_pet_id: Option<String>,
+    pub link_verified: bool,
     pub ts: u64,
 }
 
@@ -97,6 +98,7 @@ pub struct PublicStatusSnapshot {
     pub provider: String,
     pub pets: Vec<loopback::KnownPet>,
     pub active_pet_id: Option<String>,
+    pub link_verified: bool,
     pub ts: u64,
 }
 
@@ -119,6 +121,7 @@ struct BridgeInner {
     last_error: Option<String>,
     simulated_mode: Option<String>,
     simulated_state: Option<String>,
+    link_verified: bool,
 }
 
 pub struct Shared {
@@ -149,6 +152,7 @@ impl Shared {
                 last_error: None,
                 simulated_mode: None,
                 simulated_state: None,
+                link_verified: false,
             }),
             outgoing: Mutex::new(EventQueue::default()),
             loopback: Mutex::new(LoopbackStatus {
@@ -208,6 +212,7 @@ impl Shared {
             provider,
             pets: roster.pets,
             active_pet_id: roster.active_pet_id,
+            link_verified: inner.link_verified,
             ts: unix_secs(),
         }
     }
@@ -234,6 +239,7 @@ impl Shared {
             provider: snapshot.provider,
             pets: snapshot.pets,
             active_pet_id: snapshot.active_pet_id,
+            link_verified: snapshot.link_verified,
             ts: snapshot.ts,
         }
     }
@@ -250,9 +256,11 @@ impl Shared {
             inner.secure_session = SecureSessionState::Disconnected;
             inner.simulated_mode = None;
             inner.simulated_state = None;
+            inner.link_verified = false;
         } else if ble == BlePhase::Scanning {
             inner.secure_session = SecureSessionState::Disconnected;
             inner.session_id = None;
+            inner.link_verified = false;
         }
     }
 
@@ -278,6 +286,14 @@ impl Shared {
         }
     }
 
+    pub async fn set_link_verified(&self, verified: bool) {
+        self.inner.lock().await.link_verified = verified;
+    }
+
+    pub async fn is_link_verified(&self) -> bool {
+        self.inner.lock().await.link_verified
+    }
+
     pub async fn reset_secure_session(&self, expected_id: Option<&str>) {
         let mut inner = self.inner.lock().await;
         if expected_id.is_some() && inner.session_id.as_deref() != expected_id {
@@ -289,6 +305,7 @@ impl Shared {
         inner.secure_session = SecureSessionState::Disconnected;
         inner.simulated_mode = None;
         inner.simulated_state = None;
+        inner.link_verified = false;
     }
 
     pub async fn set_enrollment(&self, phase: EnrollmentPhase) {
@@ -355,6 +372,10 @@ impl Shared {
     pub async fn is_connected(&self) -> bool {
         let inner = self.inner.lock().await;
         inner.ble == BlePhase::Connected && inner.secure_session == SecureSessionState::Ready
+    }
+
+    pub async fn pet_mode(&self) -> Option<String> {
+        self.inner.lock().await.simulated_mode.clone()
     }
 
     pub async fn enqueue(&self, event: DeskPetEvent) -> usize {

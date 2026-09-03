@@ -9,15 +9,18 @@ class PetStateMachine;
 enum class WanderScreen : uint8_t {
   IDLE = 0,
   AMBIENT,
+  LINK_LOST,
 };
 
 class WanderScreens {
  public:
   static constexpr uint32_t kCycleMs = 15000;
+  static constexpr uint32_t kLinkLostMs = 4500;
 
   WanderScreens(PetStateMachine& state, Face& face, Display& display);
 
   void reset();
+  void showLinkLost();
   void tick(uint32_t nowMs);
   bool needsRedraw() const { return needsRedraw_; }
   void clearRedraw() { needsRedraw_ = false; }

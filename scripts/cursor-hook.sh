@@ -21,11 +21,12 @@ case "$HOOK_NAME" in
   sessionStart)       EVENT="sessionStart"; STATE="coding" ;;
   sessionEnd)         EVENT="sessionEnd";   STATE="" ;;
   afterAgentThought)  EVENT="stateUpdate";  STATE="thinking" ;;
-  beforeShellExecution|beforeMCPExecution|preToolUse)
+  # Tool/edit activity must leave thinking — otherwise afterAgentThought sticks.
+  beforeShellExecution|beforeMCPExecution|preToolUse|afterFileEdit|beforeReadFile)
                       EVENT="stateUpdate";  STATE="coding" ;;
   afterAgentResponse) EVENT="stateUpdate";  STATE="waiting_for_user" ;;
   afterShellExecution|postToolUse)
-                      EVENT="stateUpdate";  STATE="idle" ;;
+                      EVENT="stateUpdate";  STATE="coding" ;;
   postToolUseFailure) EVENT="stateUpdate";  STATE="error" ;;
   *)                  EVENT="stateUpdate";  STATE="idle" ;;
 esac

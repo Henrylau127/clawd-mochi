@@ -37,7 +37,10 @@ echo '{"event":"sessionStart","state":"coding"}' | socat - /dev/ttyACM0,raw,echo
 
 ### Stuck on `><` (thinking)
 
-AGENT `thinking` stays until explicitly cleared — often left behind by `TEST thinking` during validation.
+AGENT `thinking` stays until another state update clears it. With the original hook set this was common:
+`afterAgentThought` set thinking, but **file edits did not fire any hook**, so the face stayed on thinking through edits.
+
+As of 2026-09-04, `.cursor/hooks.json` also maps `preToolUse` / `postToolUse` / `afterFileEdit` → coding so tool and edit activity leave thinking. Reload Cursor hooks if the sticky face persists.
 
 ```bash
 echo WANDER | socat - /dev/ttyACM0,raw,echo=0,b115200

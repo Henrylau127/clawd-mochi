@@ -20,6 +20,7 @@ class BleTransport {
 
   static void setRedrawHook(void (*hook)());
   static void setSecureWakeHook(void (*hook)());
+  static void setDisconnectHook(void (*hook)());
 
   void updateConnectionState(bool connected, uint16_t connectionHandle = 0, bool bonded = false);
   void updateSecurityState(bool secure);

@@ -46,6 +46,7 @@ type StatusSnapshot = {
   provider?: string;
   pets?: KnownPet[];
   active_pet_id?: string | null;
+  link_verified?: boolean;
   ts: number;
 };
 
@@ -279,6 +280,13 @@ function activePet(status: StatusSnapshot): KnownPet | null {
 
 function headerSubtitle(status: StatusSnapshot): string {
   const pet = activePet(status);
+  if (
+    status.ble === "connected" &&
+    status.secure_session === "ready" &&
+    status.link_verified === false
+  ) {
+    return pet ? `Verifying link to ${pet.name}…` : "Verifying pet link…";
+  }
   if (status.secure_session === "handshaking" && status.device) {
     return `Securing ${status.device}`;
   }
@@ -343,8 +351,15 @@ function renderPetSelect(status: StatusSnapshot) {
   }
 }
 
-function badgeFor(ble: BlePhase): { label: string; className: string } {
-  switch (ble) {
+function badgeFor(status: StatusSnapshot): { label: string; className: string } {
+  if (
+    status.ble === "connected" &&
+    status.secure_session === "ready" &&
+    status.link_verified === false
+  ) {
+    return { label: "VERIFYING", className: "badge badge-warn" };
+  }
+  switch (status.ble) {
     case "connected":
       return { label: "CONNECTED", className: "badge badge-ok" };
     case "scanning":
@@ -352,7 +367,7 @@ function badgeFor(ble: BlePhase): { label: string; className: string } {
     case "disconnected":
       return { label: "OFFLINE", className: "badge badge-off" };
     default: {
-      const _never: never = ble;
+      const _never: never = status.ble;
       return _never;
     }
   }
@@ -394,7 +409,6 @@ async function refresh() {
     setText("last-event", status.last_event ?? "—");
     setText("pet-mode", status.pet_mode ?? "—");
     setText("pet-state", status.pet_state ?? "—");
-    setText("last-error", status.last_error ?? "none");
 
     if (typeof status.loopback_port === "number") {
       committedPort = status.loopback_port;
@@ -427,10 +441,20 @@ async function refresh() {
 
     const badge = document.getElementById("badge");
     if (badge) {
-      const next = badgeFor(status.ble);
+      const next = badgeFor(status);
       badge.className = next.className;
       badge.textContent = next.label;
     }
+
+    const errorText =
+      status.last_error && status.last_error.length > 0
+        ? status.last_error
+        : status.ble === "connected" &&
+            status.secure_session === "ready" &&
+            status.link_verified === false
+          ? "Link not verified yet"
+          : "none";
+    setText("last-error", errorText);
 
     const pairing = document.getElementById("pairing-toggle");
     if (pairing instanceof HTMLInputElement) {

@@ -6,6 +6,7 @@ pub struct FirmwareStatus {
     pub mode: Option<String>,
     pub state: Option<String>,
     pub firmware: Option<String>,
+    pub ble_connected: bool,
     pub secure_session_confirmed: bool,
 }
 
@@ -116,22 +117,28 @@ impl Handshake {
 }
 
 pub fn parse_firmware_status(payload: &[u8]) -> Result<FirmwareStatus, SessionError> {
-    let wire = parse_wire(payload)?;
-    let secure_session_confirmed = match (wire.ble_connected, wire.secure_session) {
-        (Some(true), Some(true)) => true,
-        (Some(false), _) | (_, Some(false)) => false,
-        _ => return Err(SessionError::MissingFirmwareConfirmation),
-    };
-    if !secure_session_confirmed {
+    let status = parse_status_read(payload)?;
+    if !status.secure_session_confirmed {
         return Err(SessionError::FirmwareSessionNotReady);
     }
-    validate_status_fields(wire.mode.as_deref(), wire.state.as_deref())?;
+    validate_status_fields(status.mode.as_deref(), status.state.as_deref())?;
+    Ok(status)
+}
 
+/// Lenient parser for periodic status reads (keepalive). Does not require an active link.
+pub fn parse_status_read(payload: &[u8]) -> Result<FirmwareStatus, SessionError> {
+    let wire = parse_wire(payload)?;
+    let ble_connected = wire.ble_connected.unwrap_or(false);
+    let secure_session = wire.secure_session.unwrap_or(false);
+    if wire.mode.is_some() || wire.state.is_some() {
+        validate_status_fields(wire.mode.as_deref(), wire.state.as_deref())?;
+    }
     Ok(FirmwareStatus {
         mode: wire.mode,
         state: wire.state,
         firmware: wire.fw,
-        secure_session_confirmed,
+        ble_connected,
+        secure_session_confirmed: ble_connected && secure_session,
     })
 }
 
@@ -174,7 +181,7 @@ fn parse_wire(payload: &[u8]) -> Result<WireNotification, SessionError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_notification, Handshake, Notification, SessionError};
+    use super::{parse_notification, parse_status_read, Handshake, Notification, SessionError};
 
     const READY_STATUS: &[u8] =
         br#"{"mode":"wander","state":"idle","ble_connected":true,"secure_session":true,"fw":"0.2.2-mac2"}"#;
@@ -214,7 +221,7 @@ mod tests {
             handshake.record_encrypted_status_read(
                 br#"{"mode":"wander","state":"idle","ble_connected":true}"#
             ),
-            Err(SessionError::MissingFirmwareConfirmation)
+            Err(SessionError::FirmwareSessionNotReady)
         );
         assert!(!handshake.is_ready());
     }
@@ -287,5 +294,17 @@ mod tests {
     fn malformed_notifications_are_rejected() {
         assert!(parse_notification(br#"{"mode":"agent"}"#).is_err());
         assert!(parse_notification(b"not json").is_err());
+    }
+
+    #[test]
+    fn status_read_reports_disconnected_firmware() {
+        let status = parse_status_read(
+            br#"{"mode":"wander","state":"idle","ble_connected":false,"secure_session":false,"fw":"0.2.2-mac2"}"#,
+        )
+        .expect("disconnected status should parse");
+
+        assert!(!status.ble_connected);
+        assert!(!status.secure_session_confirmed);
+        assert_eq!(status.mode.as_deref(), Some("wander"));
     }
 }

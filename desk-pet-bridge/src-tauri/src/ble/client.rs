@@ -1,6 +1,6 @@
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use btleplug::api::{
     Central, Characteristic, Manager as _, Peripheral as _, ScanFilter, ValueNotification,
@@ -17,7 +17,7 @@ use super::pairing::PairingWindow;
 use super::reconnect::Backoff;
 use super::roster::{self, FoundPet};
 use super::session::{self, Handshake, Notification};
-use crate::bridge::protocol::DeskPetEvent;
+use crate::bridge::protocol::{prepend_session_start_if_needed, DeskPetEvent};
 use crate::diagnostics::redact;
 use crate::state::{BlePhase, BridgeCommand, EnrollmentPhase, Shared};
 
@@ -27,12 +27,20 @@ pub const STATUS_TX_UUID: Uuid = Uuid::from_u128(0x7d3f1b2e_5a8c_4f61_9e09_9a7d4
 #[allow(dead_code)]
 pub const CONFIG_RX_UUID: Uuid = Uuid::from_u128(0x7d3f1b2e_5a8c_4f61_9e09_9a7d4955d004);
 const BLE_OPERATION_TIMEOUT: Duration = Duration::from_secs(45);
+/// Periodic encrypted status read so CoreBluetooth does not treat the link as idle.
+const BLE_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+/// First keepalive runs sooner to catch zombie sessions after pet reboot / flash.
+const BLE_KEEPALIVE_INITIAL: Duration = Duration::from_secs(5);
+const BLE_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct Session {
     peripheral: Peripheral,
     cmd_rx: Characteristic,
+    status_tx: Characteristic,
     id: String,
     name: String,
+    last_activity: Instant,
+    keepalive_validated: bool,
 }
 
 pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<BridgeCommand>) {
@@ -76,26 +84,42 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<BridgeCommand
         }
         sync_pairing_status(&shared, &pairing).await;
 
-        tokio::select! {
-            cmd = commands.recv() => {
-                let Some(cmd) = cmd else { break; };
-                handle_command(&adapter, shared.clone(), &mut session, &mut pairing, &mut backoff, cmd).await;
-            }
-            _ = tokio::time::sleep(Duration::from_millis(250)) => {}
-            _ = tokio::time::sleep(Duration::from_millis(500)), if session.is_none() => {
-                attempt_connect(&adapter, shared.clone(), &mut session, &mut pairing, &mut backoff).await;
-            }
-            _ = tokio::time::sleep(Duration::from_millis(250)), if session.is_some() => {
-                if let Some(active) = session.as_ref() {
-                    if !shared.is_connected().await
-                        || !active.peripheral.is_connected().await.unwrap_or(false)
-                    {
-                        tracing::info!("BLE disconnected from {}", active.name);
+        // Run outside select! so Cursor hook traffic cannot starve disconnect detection
+        // (same failure mode as the reconnect timer bug).
+        if let Some(active) = session.as_mut() {
+            let link_up = active.peripheral.is_connected().await.unwrap_or(false);
+            if !shared.is_connected().await || !link_up {
+                tracing::info!("BLE disconnected from {}", active.name);
+                let stale = session.take();
+                reset_session(&shared, stale).await;
+            } else if keepalive_due(active) {
+                match verify_firmware_link(active, &shared).await {
+                    Ok(()) => {
+                        active.last_activity = Instant::now();
+                        active.keepalive_validated = true;
+                    }
+                    Err(err) => {
+                        tracing::warn!("BLE keepalive failed: {}", redact(&err));
+                        shared.set_link_verified(false).await;
+                        shared.set_error(Some(redact(&err))).await;
                         let stale = session.take();
                         reset_session(&shared, stale).await;
                     }
                 }
             }
+        }
+
+        tokio::select! {
+            cmd = commands.recv() => {
+                let Some(cmd) = cmd else { break; };
+                handle_command(&adapter, shared.clone(), &mut session, &mut pairing, &mut backoff, cmd).await;
+            }
+            // Do not add an unconditional short sleep here — it always wins over the
+            // reconnect timer below and permanently cancels auto-connect.
+            _ = tokio::time::sleep(Duration::from_millis(500)), if session.is_none() => {
+                attempt_connect(&adapter, shared.clone(), &mut session, &mut pairing, &mut backoff).await;
+            }
+            _ = tokio::time::sleep(Duration::from_millis(250)), if session.is_some() => {}
         }
     }
 }
@@ -181,21 +205,36 @@ async fn handle_command(
 
 async fn send_or_queue(shared: &Shared, session: &mut Option<Session>, event: DeskPetEvent) {
     shared.record_event(&event.event).await;
-    match session.as_ref() {
-        Some(active) => {
-            if let Err(err) = write_event(active, &event).await {
+    if let Some(active) = session.as_mut() {
+        let pet_mode = shared.pet_mode().await;
+        let events = prepend_session_start_if_needed(vec![event.clone()], pet_mode.as_deref());
+        for (index, pending) in events.iter().enumerate() {
+            if let Err(err) = write_event(active, pending).await {
                 tracing::warn!("BLE write failed: {}", redact(&err));
                 shared.set_error(Some(redact(&err))).await;
-                shared.enqueue(event).await;
+                for rest in &events[index..] {
+                    shared.enqueue(rest.clone()).await;
+                }
                 let stale = session.take();
                 reset_session(shared, stale).await;
-            } else {
-                shared.set_error(None).await;
+                return;
             }
         }
-        None => {
-            shared.enqueue(event).await;
+        if !shared.is_link_verified().await {
+            if let Err(err) = verify_firmware_link(active, shared).await {
+                tracing::warn!("BLE link verification failed after write: {}", redact(&err));
+                shared.set_link_verified(false).await;
+                shared.set_error(Some(redact(&err))).await;
+                let stale = session.take();
+                reset_session(shared, stale).await;
+                return;
+            }
+            active.keepalive_validated = true;
         }
+        active.last_activity = Instant::now();
+        shared.set_error(None).await;
+    } else {
+        shared.enqueue(event).await;
     }
 }
 
@@ -217,12 +256,11 @@ async fn send_unbond(shared: &Shared, session: &mut Option<Session>) {
 
 async fn reset_session(shared: &Shared, stale: Option<Session>) {
     if let Some(active) = stale {
-        let id = active.id.clone();
         let _ = active.peripheral.disconnect().await;
-        shared.reset_secure_session(Some(&id)).await;
-    } else {
-        shared.reset_secure_session(None).await;
     }
+    // Always clear UI state on teardown — the session_id guard caused stale
+    // "connected" when the status listener had already cleared the id.
+    shared.reset_secure_session(None).await;
 }
 
 async fn write_event(session: &Session, event: &DeskPetEvent) -> Result<(), String> {
@@ -244,6 +282,35 @@ async fn write_event(session: &Session, event: &DeskPetEvent) -> Result<(), Stri
     Ok(())
 }
 
+fn keepalive_due(session: &Session) -> bool {
+    let interval = if session.keepalive_validated {
+        BLE_KEEPALIVE_INTERVAL
+    } else {
+        BLE_KEEPALIVE_INITIAL
+    };
+    session.last_activity.elapsed() >= interval
+}
+
+async fn verify_firmware_link(session: &Session, shared: &Shared) -> Result<(), String> {
+    let bytes = tokio::time::timeout(BLE_KEEPALIVE_TIMEOUT, session.peripheral.read(&session.status_tx))
+        .await
+        .map_err(|_| format!("BLE keepalive timed out after {}s", BLE_KEEPALIVE_TIMEOUT.as_secs()))?
+        .map_err(|err| err.to_string())?;
+    let status = session::parse_status_read(&bytes)
+        .map_err(|err| format!("BLE status read invalid: {err}"))?;
+    if !status.secure_session_confirmed {
+        return Err(format!(
+            "firmware reports link down (ble_connected={})",
+            status.ble_connected
+        ));
+    }
+    shared
+        .set_pet_status_for_session(&session.id, status.mode.clone(), status.state.clone())
+        .await;
+    shared.set_link_verified(true).await;
+    Ok(())
+}
+
 async fn attempt_connect(
     adapter: &Adapter,
     shared: Arc<Shared>,
@@ -260,17 +327,6 @@ async fn attempt_connect(
     }
     match connect_once(adapter, shared.clone(), pairing.is_active()).await {
         Ok(Some(new_session)) => {
-            tracing::info!("connected to {}", new_session.name);
-            shared
-                .mark_secure_session_ready(&new_session.id, &new_session.name)
-                .await;
-            shared
-                .remember_pet(new_session.id.clone(), new_session.name.clone())
-                .await;
-            if pairing.is_active() {
-                pairing.stop();
-                shared.set_pairing(false).await;
-            }
             backoff.reset();
             *session = Some(new_session);
             let flushed = match session.as_ref() {
@@ -280,10 +336,33 @@ async fn attempt_connect(
             if !flushed {
                 let stale = session.take();
                 reset_session(&shared, stale).await;
+                return;
             }
-            if session.is_some() {
-                shared.set_error(None).await;
+            let active = session.as_ref().expect("session set after flush");
+            if let Err(err) = verify_firmware_link(active, &shared).await {
+                tracing::warn!("BLE link verification failed: {}", redact(&err));
+                shared.set_error(Some(redact(&err))).await;
+                let stale = session.take();
+                reset_session(&shared, stale).await;
+                return;
             }
+            let pet_id = active.id.clone();
+            let pet_name = active.name.clone();
+            tracing::info!("connected to {}", pet_name);
+            shared
+                .mark_secure_session_ready(&pet_id, &pet_name)
+                .await;
+            if let Some(active) = session.as_mut() {
+                active.keepalive_validated = true;
+            }
+            shared
+                .remember_pet(pet_id, pet_name)
+                .await;
+            if pairing.is_active() {
+                pairing.stop();
+                shared.set_pairing(false).await;
+            }
+            shared.set_error(None).await;
         }
         Ok(None) => {
             shared.set_phase(BlePhase::Disconnected, None).await;
@@ -305,7 +384,8 @@ async fn attempt_connect(
 }
 
 async fn flush_queue(shared: &Shared, session: &Session) -> bool {
-    let events = shared.drain_queue().await;
+    let pet_mode = shared.pet_mode().await;
+    let events = prepend_session_start_if_needed(shared.drain_queue().await, pet_mode.as_deref());
     for (index, event) in events.iter().enumerate() {
         if let Err(err) = write_event(session, &event).await {
             tracing::warn!("queued write failed: {}", redact(&err));
@@ -470,8 +550,11 @@ async fn establish_session(candidate: &Candidate, shared: Arc<Shared>) -> Result
     Ok(Session {
         peripheral: candidate.peripheral.clone(),
         cmd_rx,
+        status_tx,
         id: candidate.id.clone(),
         name: candidate.name.clone(),
+        last_activity: Instant::now(),
+        keepalive_validated: false,
     })
 }
 
@@ -561,11 +644,17 @@ fn spawn_status_listener(
                             status.state.clone(),
                         )
                         .await;
+                    if status.secure_session_confirmed {
+                        shared.set_link_verified(true).await;
+                    }
                 }
                 Ok(Notification::Ack(ack)) => {
                     shared
                         .set_pet_status_for_session(&session_id, ack.mode, ack.state)
                         .await;
+                    if ack.ok {
+                        shared.set_link_verified(true).await;
+                    }
                     if !ack.ok {
                         shared.set_error(ack.error.as_deref().map(redact)).await;
                     }
@@ -587,7 +676,7 @@ fn spawn_status_listener(
                 }
             }
         }
-        shared.reset_secure_session(Some(&session_id)).await;
+        shared.reset_secure_session(None).await;
     });
 }
 

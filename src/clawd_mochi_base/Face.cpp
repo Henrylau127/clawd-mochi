@@ -230,6 +230,20 @@ void Face::drawWaitingEyes() {
   tft.fillRoundRect(rx, ey, EYE_W, tall, 8, Display::kBlack);
 }
 
+void Face::drawLinkLost(bool blinkOpen, bool fullRedraw) {
+  Adafruit_ST7789& tft = display_.tft();
+  const uint16_t bg = tft.color565(32, 36, 48);
+  display_.setAnimBgColor(bg);
+  if (fullRedraw) {
+    tft.fillScreen(bg);
+  }
+  drawNormalEyes(0, !blinkOpen, fullRedraw);
+  tft.setTextColor(tft.color565(140, 148, 168));
+  tft.setTextSize(2);
+  tft.setCursor(DISP_W / 2 - 48, DISP_H - 36);
+  tft.print("link lost");
+}
+
 void Face::drawSecurityEyes() {
   Adafruit_ST7789& tft = display_.tft();
   tft.fillScreen(display_.animBgColor());

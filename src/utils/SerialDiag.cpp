@@ -115,7 +115,7 @@ void SerialDiag::handleLine(const String& line) {
   }
 
   if (cmd == F("STATUS")) {
-    char json[256] = {};
+    char json[JsonProtocol::kStatusJsonCapacity] = {};
     const size_t n = JsonProtocol::buildStatusJson(state_, json, sizeof(json));
     if (n == 0) {
       replyErr("status encode failed");

@@ -20,6 +20,16 @@ void WanderScreens::reset() {
   needsRedraw_ = true;
 }
 
+void WanderScreens::showLinkLost() {
+  screen_ = WanderScreen::LINK_LOST;
+  screenStartMs_ = millis();
+  lastAnimMs_ = screenStartMs_;
+  blinkOpen_ = true;
+  lookOffset_ = 0;
+  idlePrimed_ = false;
+  needsRedraw_ = true;
+}
+
 void WanderScreens::advanceScreen(uint32_t nowMs) {
   screenStartMs_ = nowMs;
   idlePrimed_ = false;
@@ -29,6 +39,9 @@ void WanderScreens::advanceScreen(uint32_t nowMs) {
       regenerateAmbientStars();
       break;
     case WanderScreen::AMBIENT:
+      screen_ = WanderScreen::IDLE;
+      break;
+    case WanderScreen::LINK_LOST:
       screen_ = WanderScreen::IDLE;
       break;
   }
@@ -77,17 +90,40 @@ void WanderScreens::drawCurrent(uint32_t nowMs) {
       drawAmbientScreen(nowMs, !idlePrimed_);
       idlePrimed_ = true;
       break;
+    case WanderScreen::LINK_LOST:
+      face_.drawLinkLost(blinkOpen_, !idlePrimed_);
+      idlePrimed_ = true;
+      break;
   }
   lastAnimMs_ = nowMs;
 }
 
 void WanderScreens::tick(uint32_t nowMs) {
-  if (state_.mode != PetMode::WANDER || state_.securityOverlayActive) {
+  // Pairing owns the TFT while the window is open; do not paint over the code.
+  if (state_.mode != PetMode::WANDER || state_.securityOverlayActive || state_.pairingActive) {
     return;
   }
 
   if (screenStartMs_ == 0) {
     reset();
+  }
+
+  if (screen_ == WanderScreen::LINK_LOST) {
+    if ((nowMs - screenStartMs_) >= kLinkLostMs) {
+      screen_ = WanderScreen::IDLE;
+      screenStartMs_ = nowMs;
+      idlePrimed_ = false;
+      needsRedraw_ = true;
+    } else if ((nowMs - lastAnimMs_) >= 900) {
+      blinkOpen_ = !blinkOpen_;
+      needsRedraw_ = true;
+      lastAnimMs_ = nowMs;
+    }
+    if (needsRedraw_) {
+      drawCurrent(nowMs);
+      needsRedraw_ = false;
+    }
+    return;
   }
 
   if ((nowMs - screenStartMs_) >= kCycleMs) {

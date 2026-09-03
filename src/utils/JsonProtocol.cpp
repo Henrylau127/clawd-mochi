@@ -194,7 +194,15 @@ size_t JsonProtocol::buildStatusJson(const PetStateMachine& sm, char* out, size_
   doc["security_overlay"] = sm.securityOverlayActive;
   doc["fw"] = DESKPET_FW_VERSION;
 
-  return serializeJson(doc, out, outLen);
+  if (out == nullptr || outLen < 2) {
+    return 0;
+  }
+  const size_t n = serializeJson(doc, out, outLen);
+  if (n == 0 || n >= outLen - 1) {
+    out[0] = '\0';
+    return 0;
+  }
+  return n;
 }
 
 size_t JsonProtocol::buildAckJson(const char* id, bool ok, const PetStateMachine& sm,

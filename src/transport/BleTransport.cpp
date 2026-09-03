@@ -15,12 +15,19 @@ constexpr char kCmdRxUuid[] = "7d3f1b2e-5a8c-4f61-9e09-9a7d4955d002";
 constexpr char kStatusTxUuid[] = "7d3f1b2e-5a8c-4f61-9e09-9a7d4955d003";
 constexpr char kConfigRxUuid[] = "7d3f1b2e-5a8c-4f61-9e09-9a7d4955d004";
 
+// Connection interval in 1.25ms units; supervision timeout in 10ms units.
+constexpr uint16_t kConnIntervalMin = 24;   // 30ms
+constexpr uint16_t kConnIntervalMax = 48;   // 60ms
+constexpr uint16_t kSupervisionPairing = 600;   // 6s while pairing UI is active
+constexpr uint16_t kSupervisionBonded = 2000; // 20s once encrypted (was 4s)
+
 BleTransport* gTransport = nullptr;
 BleSecurity* gSecurity = nullptr;
 NimBLEServer* gServer = nullptr;
 NimBLECharacteristic* gStatusTx = nullptr;
 void (*gBleRedrawHook)() = nullptr;
 void (*gSecureWakeHook)() = nullptr;
+void (*gBleDisconnectHook)() = nullptr;
 
 bool isAuthorizedSecureConnection(const NimBLEConnInfo& connInfo) {
   if (!connInfo.isEncrypted() || !connInfo.isAuthenticated()) {
@@ -28,6 +35,14 @@ bool isAuthorizedSecureConnection(const NimBLEConnInfo& connInfo) {
   }
   return gSecurity == nullptr || gSecurity->allowsConnection(connInfo.isBonded());
 }
+
+bool pairingWindowOpen() {
+  return gSecurity != nullptr && gSecurity->allowsNewBond();
+}
+
+// During an open pairing window, keep the link up so macOS can show the
+// passkey dialog. Reject insecure GATT access without tearing the connection.
+bool shouldDisconnectInsecureAccess() { return !pairingWindowOpen(); }
 
 class DeskPetServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) override {
@@ -49,13 +64,20 @@ class DeskPetServerCallbacks : public NimBLEServerCallbacks {
     Serial.print(F(" bonded="));
     Serial.println(connInfo.isBonded() ? F("yes") : F("no"));
     if (server != nullptr) {
-      server->updateConnParams(connInfo.getConnHandle(), 24, 48, 0, 400);
+      server->updateConnParams(
+          connInfo.getConnHandle(), kConnIntervalMin, kConnIntervalMax, 0, kSupervisionPairing);
+    }
+    // Ask for LE Secure Connections while the window is open so CoreBluetooth
+    // can present the passkey UI before GATT reads time out.
+    if (pairingWindowOpen() && !connInfo.isEncrypted()) {
+      NimBLEDevice::startSecurity(connInfo.getConnHandle());
     }
   }
 
   void onDisconnect(NimBLEServer* server, NimBLEConnInfo& connInfo, int reason) override {
     (void)connInfo;
-    (void)reason;
+    Serial.print(F("BLE disconnected reason="));
+    Serial.println(reason);
     if (gTransport != nullptr) {
       gTransport->updateConnectionState(false);
     }
@@ -74,12 +96,18 @@ class DeskPetServerCallbacks : public NimBLEServerCallbacks {
 
   void onAuthenticationComplete(NimBLEConnInfo& connInfo) override {
     const bool secure = isAuthorizedSecureConnection(connInfo);
-    if (!secure && gServer != nullptr) {
+    // Do not drop the link while pairing is still open — that cancels the
+    // macOS passkey prompt before the user can enter the code.
+    if (!secure && gServer != nullptr && shouldDisconnectInsecureAccess()) {
       gServer->disconnect(connInfo);
     }
     if (gTransport != nullptr) {
       gTransport->updateBondState(connInfo.isBonded());
       gTransport->updateSecurityState(secure);
+    }
+    if (secure && gServer != nullptr) {
+      gServer->updateConnParams(
+          connInfo.getConnHandle(), kConnIntervalMin, kConnIntervalMax, 0, kSupervisionBonded);
     }
     if (gSecurity != nullptr) {
       gSecurity->onAuthenticationComplete(secure);
@@ -104,7 +132,7 @@ class DeskPetCharacteristicCallbacks : public NimBLECharacteristicCallbacks {
     }
     if (!isAuthorizedSecureConnection(connInfo)) {
       Serial.println(F("BLE read rejected: insecure connection"));
-      if (gServer != nullptr) {
+      if (gServer != nullptr && shouldDisconnectInsecureAccess()) {
         gServer->disconnect(connInfo);
       }
       return;
@@ -118,7 +146,7 @@ class DeskPetCharacteristicCallbacks : public NimBLECharacteristicCallbacks {
     }
     if (!isAuthorizedSecureConnection(connInfo)) {
       Serial.println(F("BLE write rejected: insecure connection"));
-      if (gServer != nullptr) {
+      if (gServer != nullptr && shouldDisconnectInsecureAccess()) {
         gServer->disconnect(connInfo);
       }
       return;
@@ -141,7 +169,7 @@ class DeskPetCharacteristicCallbacks : public NimBLECharacteristicCallbacks {
     }
     if (!isAuthorizedSecureConnection(connInfo)) {
       Serial.println(F("BLE subscribe rejected: insecure connection"));
-      if (gServer != nullptr) {
+      if (gServer != nullptr && shouldDisconnectInsecureAccess()) {
         gServer->disconnect(connInfo);
       }
       return;
@@ -169,6 +197,8 @@ void BleTransport::setRedrawHook(void (*hook)()) { gBleRedrawHook = hook; }
 
 void BleTransport::setSecureWakeHook(void (*hook)()) { gSecureWakeHook = hook; }
 
+void BleTransport::setDisconnectHook(void (*hook)()) { gBleDisconnectHook = hook; }
+
 BleTransport::BleTransport(PetStateMachine& state, BleSecurity& security)
     : state_(state), security_(security) {}
 
@@ -189,19 +219,22 @@ void BleTransport::begin(const char* deviceName) {
 
   NimBLEService* service = server->createService(kServiceUuid);
 
+  // Base READ/WRITE must accompany *_ENC/*_AUTHEN so NimBLE exposes the
+  // characteristic and CoreBluetooth can start the pairing flow on access.
   NimBLECharacteristic* cmdRx = service->createCharacteristic(
       kCmdRxUuid,
-      NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
+      NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
   cmdRx->setCallbacks(new DeskPetCharacteristicCallbacks(false));
 
   gStatusTx = service->createCharacteristic(
       kStatusTxUuid,
-      NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN | NIMBLE_PROPERTY::NOTIFY);
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN |
+          NIMBLE_PROPERTY::NOTIFY);
   gStatusTx->setCallbacks(new DeskPetCharacteristicCallbacks(false));
 
   NimBLECharacteristic* configRx = service->createCharacteristic(
       kConfigRxUuid,
-      NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
+      NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN);
   configRx->setCallbacks(new DeskPetCharacteristicCallbacks(true));
   refreshStatusValue();
 
@@ -223,12 +256,21 @@ void BleTransport::tick() {
 }
 
 void BleTransport::updateConnectionState(bool connected, uint16_t connectionHandle, bool bonded) {
+  const bool wasConnected = connected_;
   connected_ = connected;
   if (!connected) {
     secure_ = false;
     bonded_ = false;
     notifyEnabled_ = false;
     connectionHandle_ = 0;
+    if (wasConnected) {
+      state_.onBleDisconnect();
+      if (gBleDisconnectHook != nullptr) {
+        gBleDisconnectHook();
+      } else if (gBleRedrawHook != nullptr) {
+        gBleRedrawHook();
+      }
+    }
   } else {
     connectionHandle_ = connectionHandle;
     bonded_ = bonded;
@@ -259,7 +301,7 @@ void BleTransport::refreshStatusValue() {
   if (gStatusTx == nullptr) {
     return;
   }
-  char status[256] = {};
+  char status[JsonProtocol::kStatusJsonCapacity] = {};
   const size_t len = JsonProtocol::buildStatusJson(state_, status, sizeof(status));
   if (len > 0) {
     gStatusTx->setValue(reinterpret_cast<const uint8_t*>(status), len);

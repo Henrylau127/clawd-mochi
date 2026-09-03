@@ -111,6 +111,21 @@ TransitionResult PetStateMachine::onSessionEnd() {
   return TransitionResult::OK;
 }
 
+TransitionResult PetStateMachine::onBleDisconnect() {
+  if (mode == PetMode::SLEEP) {
+    return TransitionResult::IGNORED;
+  }
+  const bool hadAgentSession = mode == PetMode::AGENT;
+  attentionActive = false;
+  attentionLevel = AttentionLevel::NONE;
+  securityOverlayActive = false;
+  quotaVisible = false;
+  securityTypeLabel[0] = '\0';
+  mode = PetMode::WANDER;
+  expression = AgentExpression::IDLE;
+  return hadAgentSession ? TransitionResult::OK : TransitionResult::IGNORED;
+}
+
 TransitionResult PetStateMachine::onStateUpdate(const char* state) {
   if (mode != PetMode::AGENT) {
     return TransitionResult::IGNORED;

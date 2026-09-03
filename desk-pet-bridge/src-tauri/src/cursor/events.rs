@@ -39,11 +39,15 @@ pub fn map_incoming(mut body: Value) -> Result<Value, ProtocolError> {
 
     let (event, state) = match hook.as_str() {
         "afterAgentThought" => ("stateUpdate", Some("thinking")),
-        "beforeShellExecution" | "beforeMCPExecution" | "preToolUse" => {
-            ("stateUpdate", Some("coding"))
-        }
+        // Leave thinking as soon as tools/edits run; thought hooks alone stick otherwise.
+        "beforeShellExecution"
+        | "beforeMCPExecution"
+        | "preToolUse"
+        | "afterFileEdit"
+        | "beforeReadFile" => ("stateUpdate", Some("coding")),
         "afterAgentResponse" => ("stateUpdate", Some("waiting_for_user")),
-        "afterShellExecution" | "postToolUse" => ("stateUpdate", Some("idle")),
+        // Stay in coding between tool rounds instead of flashing idle.
+        "afterShellExecution" | "postToolUse" => ("stateUpdate", Some("coding")),
         "postToolUseFailure" => ("stateUpdate", Some("error")),
         "" => return Err(ProtocolError::UnknownEvent),
         _ => return Err(ProtocolError::UnknownEvent),
@@ -75,6 +79,15 @@ mod tests {
         let mapped = map_incoming(json!({"hook": "afterAgentThought"})).unwrap();
         assert_eq!(mapped["event"], "stateUpdate");
         assert_eq!(mapped["state"], "thinking");
+    }
+
+    #[test]
+    fn tool_and_edit_hooks_leave_thinking() {
+        for hook in ["preToolUse", "afterFileEdit", "beforeReadFile", "postToolUse"] {
+            let mapped = map_incoming(json!({ "hook": hook })).unwrap();
+            assert_eq!(mapped["event"], "stateUpdate", "{}", hook);
+            assert_eq!(mapped["state"], "coding", "{}", hook);
+        }
     }
 
     #[test]

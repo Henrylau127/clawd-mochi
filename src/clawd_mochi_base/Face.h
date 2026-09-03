@@ -14,6 +14,7 @@ class Face {
   bool tickLogoReveal();
   void drawExpression(AgentExpression expr);
   void drawWanderIdle(bool blinkOpen, int16_t lookOffset, bool fullRedraw);
+  void drawLinkLost(bool blinkOpen, bool fullRedraw);
   void drawCurrent();
   uint16_t expressionColor(AgentExpression expr) const;
 

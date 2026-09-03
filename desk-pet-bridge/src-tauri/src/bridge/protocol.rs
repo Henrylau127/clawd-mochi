@@ -148,6 +148,39 @@ pub fn short_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()[..8].to_string()
 }
 
+fn requires_agent_mode(event: &str) -> bool {
+    matches!(
+        event,
+        "stateUpdate" | "attentionRequired" | "attentionCleared"
+    )
+}
+
+/// Firmware ignores agent events until `sessionStart` moves the pet out of wander mode.
+pub fn prepend_session_start_if_needed(
+    events: Vec<DeskPetEvent>,
+    pet_mode: Option<&str>,
+) -> Vec<DeskPetEvent> {
+    if pet_mode.is_some_and(|mode| mode != "wander") {
+        return events;
+    }
+    if events.iter().any(|event| event.event == "sessionStart") {
+        return events;
+    }
+    if !events.iter().any(|event| requires_agent_mode(&event.event)) {
+        return events;
+    }
+    let state = events
+        .iter()
+        .find(|event| event.event == "stateUpdate")
+        .and_then(|event| event.state.as_deref())
+        .unwrap_or("coding");
+    let mut session_start = DeskPetEvent::new("sessionStart").with_state(state);
+    session_start.ensure_id();
+    let mut expanded = vec![session_start];
+    expanded.extend(events);
+    expanded
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,6 +207,23 @@ mod tests {
     fn rejects_unknown_state() {
         let event = DeskPetEvent::new("stateUpdate").with_state("explode");
         assert!(matches!(event.validate(), Err(ProtocolError::UnknownState)));
+    }
+
+    #[test]
+    fn prepends_session_start_for_wander_agent_events() {
+        let events = vec![DeskPetEvent::new("stateUpdate").with_state("thinking")];
+        let expanded = prepend_session_start_if_needed(events, Some("wander"));
+        assert_eq!(expanded.len(), 2);
+        assert_eq!(expanded[0].event, "sessionStart");
+        assert_eq!(expanded[0].state.as_deref(), Some("thinking"));
+        assert_eq!(expanded[1].event, "stateUpdate");
+    }
+
+    #[test]
+    fn skips_session_start_when_already_in_agent_mode() {
+        let events = vec![DeskPetEvent::new("stateUpdate").with_state("coding")];
+        let expanded = prepend_session_start_if_needed(events, Some("agent"));
+        assert_eq!(expanded.len(), 1);
     }
 
     #[test]

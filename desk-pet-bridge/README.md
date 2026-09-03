@@ -5,6 +5,7 @@ Tauri v2 menu-bar app that forwards Cursor agent events to the ESP32 desk pet ov
 ## What it does
 
 - Lives in the macOS menu bar (no dock icon).
+- Menu-bar icon shows a corner status dot (green connected, yellow connecting/securing, red offline, grey unpaired) with a hover tooltip.
 - Scans for `DP-<MAC>` and the desk-pet GATT service.
 - Writes compact JSON to the encrypted Command RX (`7d3f1b2e-...d002`) using CoreBluetooth via `btleplug`.
 - Performs a secure GATT handshake before reporting the pet as connected; the first pairing can wait for the macOS passkey prompt.

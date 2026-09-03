@@ -45,6 +45,7 @@ struct PetStateMachine {
 
   TransitionResult onSessionStart(const char* state);
   TransitionResult onSessionEnd();
+  TransitionResult onBleDisconnect();
   TransitionResult onStateUpdate(const char* state);
   TransitionResult onSleep();
   TransitionResult onWake();

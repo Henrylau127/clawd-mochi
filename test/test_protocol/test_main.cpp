@@ -114,16 +114,34 @@ static void test_wander_agent_wander_transitions() {
   TEST_ASSERT_EQUAL(static_cast<int>(AgentExpression::IDLE), static_cast<int>(sm.expression));
 }
 
+static void test_ble_disconnect_ends_agent_session() {
+  PetStateMachine sm;
+  sm.onSessionStart("coding");
+  sm.attentionActive = true;
+  sm.attentionLevel = AttentionLevel::FAST_PULSE;
+  sm.securityOverlayActive = true;
+  sm.quotaVisible = true;
+
+  TEST_ASSERT_EQUAL(TransitionResult::OK, sm.onBleDisconnect());
+  TEST_ASSERT_EQUAL(static_cast<int>(PetMode::WANDER), static_cast<int>(sm.mode));
+  TEST_ASSERT_EQUAL(static_cast<int>(AgentExpression::IDLE), static_cast<int>(sm.expression));
+  TEST_ASSERT_FALSE(sm.attentionActive);
+  TEST_ASSERT_FALSE(sm.securityOverlayActive);
+  TEST_ASSERT_FALSE(sm.quotaVisible);
+}
+
 static void test_status_json_fields() {
   PetStateMachine sm;
   sm.onSessionStart("idle");
-  char status[256] = {};
+  char status[JsonProtocol::kStatusJsonCapacity] = {};
   const size_t n = JsonProtocol::buildStatusJson(sm, status, sizeof(status));
   TEST_ASSERT_GREATER_THAN(0, n);
+  TEST_ASSERT_TRUE(n < sizeof(status) - 1);
   TEST_ASSERT_NOT_NULL(strstr(status, "\"mode\":\"agent\""));
   TEST_ASSERT_NOT_NULL(strstr(status, "\"ble_connected\":false"));
   TEST_ASSERT_NOT_NULL(strstr(status, "\"secure_session\":false"));
   TEST_ASSERT_NOT_NULL(strstr(status, "\"pairing_active\":false"));
+  TEST_ASSERT_NOT_NULL(strstr(status, "\"fw\":\""));
 
   sm.bleConnected = true;
   memset(status, 0, sizeof(status));
@@ -246,6 +264,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_security_event_preserves_underlying_expression);
   RUN_TEST(test_session_hooks_run_only_after_successful_transitions);
   RUN_TEST(test_wander_agent_wander_transitions);
+  RUN_TEST(test_ble_disconnect_ends_agent_session);
   RUN_TEST(test_status_json_fields);
   RUN_TEST(test_ack_error_shape);
   RUN_TEST(test_pairing_json_events);

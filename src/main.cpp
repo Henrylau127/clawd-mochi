@@ -65,6 +65,16 @@ void onSecureBleWakeHook() {
   }
 }
 
+void onBleDisconnectHook() {
+  if (gBleSecurity.shouldShowPairingScreen()) {
+    gRenderDirty = true;
+    return;
+  }
+  gAttention.onSessionChange();
+  gWander.showLinkLost();
+  gRenderDirty = true;
+}
+
 String deviceNameFromMac() {
   uint8_t mac[6] = {};
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
@@ -139,7 +149,9 @@ void tickRender() {
   }
   gPrevMode = gState.mode;
 
-  if (gState.mode == PetMode::WANDER && !gState.securityOverlayActive) {
+  if (gBleSecurity.shouldShowPairingScreen()) {
+    dirty = true;
+  } else if (gState.mode == PetMode::WANDER && !gState.securityOverlayActive) {
     gWander.tick(now);
     dirty = dirty || gWander.needsRedraw();
   } else if (gState.mode == PetMode::AGENT) {
@@ -148,7 +160,9 @@ void tickRender() {
   }
 
   if (dirty) {
-    if (!(gState.mode == PetMode::WANDER && !gState.securityOverlayActive &&
+    const bool pairingUi = gBleSecurity.shouldShowPairingScreen();
+    if (pairingUi ||
+        !(gState.mode == PetMode::WANDER && !gState.securityOverlayActive &&
           !gSerial.needsRedraw() && !gRenderDirty && !gSecurity.needsRedraw())) {
       drawActiveScene();
     }
@@ -218,6 +232,7 @@ void setup() {
   gBleTransport.begin(deviceName.c_str());
   BleTransport::setRedrawHook(markDirty);
   BleTransport::setSecureWakeHook(onSecureBleWakeHook);
+  BleTransport::setDisconnectHook(onBleDisconnectHook);
 
   gBootPhaseStartMs = millis();
   gFace.showBootSplash();

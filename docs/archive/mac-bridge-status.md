@@ -1,4 +1,4 @@
-# Mac bridge session status (2026-09-03)
+# Mac bridge session status (2026-09-04)
 
 Wrap-up of the Mac-host work after the WSL firmware pass. Firmware Tiers 0–2 remain in [wsl-validation.md](wsl-validation.md). How to run tools on this Mac is in [mac-validation.md](mac-validation.md).
 
@@ -56,7 +56,7 @@ In mock mode, **Add pet** enrolls `DP-TEST` and connects. That path does not exe
 - Menu-bar popover (not a separate window). Native Liquid Glass via `window-vibrancy`.
 - Loopback HTTP for Cursor hooks. Port range 1–65535, occupancy check before rebind, sticky Apply errors, Cancel (red X) / Apply (green tick), Escape reverts the field. Sidecar `~/.deskpet-bridge.json`.
 - Port-change listener no longer tight-loops (`borrow_and_update` on the tokio watch). Last local port used: **6900**.
-- Mock BLE (`DESKPET_BLE_MOCK=1`, in-process `DP-TEST`). `cargo test --lib`: 49 passed (roster, port stability, secure-session, privacy, and mock API coverage).
+- Mock BLE (`DESKPET_BLE_MOCK=1`, in-process `DP-TEST`). `cargo test --lib`: 49+ passed (roster, port stability, secure-session, privacy, and mock API coverage).
 - Queue tile opens a live sheet; titles are human copy (e.g. **Bot is thinking**).
 - Settings sheet: provider (Cursor only; Codex / Claude Code / Pi disabled), pets, pairing, loopback, test pet.
 - Settings grows the popover; close / Escape restores home height.
@@ -73,27 +73,48 @@ In mock mode, **Add pet** enrolls `DP-TEST` and connects. That path does not exe
 
 - `.github/workflows/build.yml` uploads two artifacts: ESP32 firmware package and a universal macOS DMG.
 
+## Hardware validation log (2026-09-04)
+
+Board: ESP32-C3 Super Mini `30:ED:A0:65:CC:98` → `DP-CC98` on `/dev/cu.usbmodem3101`. Bridge loopback `127.0.0.1:6900`.
+
+| Check | Result | Evidence |
+|-------|--------|----------|
+| Reflash current tree | PASS | `pio run -t upload -e esp32-c3-super-mini` (STATUS buffer + pairing-race fixes) |
+| Serial STATUS/TEST/PAIR/UNBOND/SLEEP/WAKE | PASS | serial MCP; STATUS includes `secure_session` + complete `fw` |
+| Independent BLE reject (pairing closed) | PASS | BLE MCP connect → firmware `BLE rejected: pairing window closed` |
+| Independent BLE + Add pet bond | PASS | After firmware fix: `BLE auth complete encrypted=yes authenticated=yes bonded=yes`; bridge `enrollment:success`, `secure_session:ready` |
+| `POST /v1/test` coding | PASS | `{"ok":true,"queued":false}`; status `pet_mode:agent` / `pet_state:coding` |
+| Bridge restart reconnect (no PIN) | PASS | Auto-reconnect to `DP-CC98` without passkey; early attempts were slow (scan+backoff) so **Reconnect** felt required — reconnect path tightened afterward |
+| Cursor hooks while bonded | PASS | Live Cursor session drove continuous encrypted Command RX writes; bridge `last_event` updates |
+
+### Pairing-race fix (required for Mac passkey UX)
+
+Before the fix, **Add pet** connected then firmware disconnected on insecure GATT access, so macOS never showed a passkey dialog and wander overpainted the TFT code. Fixed in firmware:
+
+- Keep the link up while the pairing window is open.
+- Start LE security on connect during pairing.
+- Add base `READ`/`WRITE` properties with ENC/AUTHEN.
+- Do not let wander redraw over the pairing screen.
+
+### Reconnect UX note
+
+Auto-reconnect is intended. After bridge restart, “not found” retries now use a short fixed delay (not error backoff), known-pet scans are ~1.5s, and error backoff caps at 8s. **Reconnect** still resets backoff for an immediate try.
+
 ## Still needed
 
-Hardware acceptance still pending (the connected board was only queried read-only in this validation):
+1. **Tier 4 display** — human confirmation that TFT expressions/colors match agent state (attention timings, security overlay, dimming).
+2. **Other hook providers** — Codex, Claude Code, Pi stay disabled until those adapters exist.
+3. **Mac sleep/wake → backlight** — only if/when the bridge exposes that path.
+4. **Git checkpoint** — commit/PR when you want the validation + pairing-race fix saved.
 
-1. **[HEN-8](https://linear.app/henrylau127/issue/HEN-8) Mac BLE E2E (Tier 5)** — bond via **Add pet**, passkey on TFT, encrypted GATT write, reboot reconnect, `POST /v1/test` changes the face. This was not run; only serial `STATUS` was queried.
-2. **[HEN-7](https://linear.app/henrylau127/issue/HEN-7) Cursor E2E** — live Cursor session while the menu-bar app is running and a bonded pet is connected.
-3. **[HEN-5](https://linear.app/henrylau127/issue/HEN-5) remaining firmware BLE acceptance** — Tier 3 nRF Connect phone pairing. Mac path is HEN-8.
-4. **Tier 4 display** — human check that TFT expressions match agent state.
-
-Remaining software / documentation notes:
-
-5. **Other hook providers** — Codex, Claude Code, Pi stay disabled until those adapters exist.
-6. **serial-mcp** — optional agent serial docs, only after explicit MCP install approval.
-7. **Git** — this Mac session has a large uncommitted working tree; nothing was pushed unless asked. Commit/PR when you want a checkpoint.
+Phone nRF Connect is optional now that Mac Tier 3-equivalent checks (independent BLE MCP + Add pet) passed on this host.
 
 ## How to pick up
 
 ```bash
 ./scripts/check-mac-env.sh
 ./scripts/validate-host.sh
-cd desk-pet-bridge && DESKPET_BLE_MOCK=1 pnpm tauri dev
+cd desk-pet-bridge && pnpm tauri dev
 ```
 
-With hardware: flash, open pairing on the pet, then **Add pet**. Checklist is in [mac-validation.md](mac-validation.md).
+With hardware already bonded: bridge should reconnect to the active pet automatically. Checklist is in [mac-validation.md](mac-validation.md).

@@ -80,10 +80,25 @@ Checklist:
    Settings → **Add pet**. The bridge shows scanning and passkey-pending states, performs a secure
    GATT handshake, and the passkey appears on the TFT. With no advertising ESP32, Add pet correctly
    enrolls nothing — see [mac-bridge-status.md](mac-bridge-status.md).
-4. `curl -s http://127.0.0.1:8765/v1/status` shows `connected` and a `DP-` name only after the
-   encrypted status read, mandatory status subscription, and firmware secure-session confirmation.
-5. `curl -s -X POST http://127.0.0.1:8765/v1/test -H 'Content-Type: application/json' -d '{"state":"coding"}'` changes the face.
+4. `curl -s http://127.0.0.1:6900/v1/status` (or the loopback port shown in Settings) reports
+   `ble: connected`, `secure_session: ready`, and a real `DP-*` name only after the encrypted
+   status read, mandatory status subscription, and firmware secure-session confirmation.
+5. `curl -s -X POST http://127.0.0.1:6900/v1/test -H 'Content-Type: application/json' -d '{"state":"coding"}'` changes the face.
 6. Cursor hooks in `.cursor/hooks.json` POST to the same loopback port.
+7. Restart the bridge: it should auto-reconnect to the active pet without another passkey.
+   **Reconnect** is optional (immediate try); it is not required for bonding.
+
+### Hardware log (2026-09-04)
+
+| Item | Result |
+|------|--------|
+| Add pet + passkey on `DP-CC98` | PASS (after pairing-race firmware fix) |
+| Encrypted `/v1/test` coding | PASS |
+| Bridge restart auto-reconnect | PASS (no PIN) |
+| Cursor hooks while bonded | PASS |
+| Tier 4 TFT eyeball | Not signed off |
+
+Details: [mac-bridge-status.md](mac-bridge-status.md).
 
 The bridge cannot programmatically remove a CoreBluetooth bond. After **Remove pet**, use System
 Settings → Bluetooth → the pet → **Forget This Device** before enrolling it again.

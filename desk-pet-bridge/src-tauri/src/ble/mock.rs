@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use super::pairing::PairingWindow;
-use crate::bridge::protocol::DeskPetEvent;
+use crate::bridge::protocol::{prepend_session_start_if_needed, DeskPetEvent};
 use crate::state::{BlePhase, BridgeCommand, EnrollmentPhase, Shared};
 
 pub const MOCK_DEVICE_NAME: &str = "DP-TEST";
@@ -212,7 +212,10 @@ async fn handle_command(
                 }
                 return;
             }
-            apply_event(shared, pet, pairing, event).await;
+            let events = prepend_session_start_if_needed(vec![event], Some(&pet.mode));
+            for pending in events {
+                apply_event(shared, pet, pairing, pending).await;
+            }
         }
     }
 }
@@ -240,7 +243,8 @@ async fn apply_event(
 
 async fn flush_queue(shared: &Shared, pet: &mut SimulatedPet) {
     let mut pairing = PairingWindow::new();
-    for event in shared.drain_queue().await {
+    let events = prepend_session_start_if_needed(shared.drain_queue().await, Some(&pet.mode));
+    for event in events {
         apply_event(shared, pet, &mut pairing, event).await;
     }
 }

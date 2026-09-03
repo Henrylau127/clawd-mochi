@@ -16,6 +16,8 @@ struct JsonParseResult {
 };
 
 struct JsonProtocol {
+  static constexpr size_t kStatusJsonCapacity = 512;
+
   static JsonParseResult parseCommand(const char* json, size_t len);
   static size_t buildStatusJson(const PetStateMachine& sm, char* out, size_t outLen);
   static size_t buildAckJson(const char* id, bool ok, const PetStateMachine& sm,

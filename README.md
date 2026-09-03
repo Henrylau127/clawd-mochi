@@ -19,7 +19,7 @@ The production firmware is BLE-first. It does not host a Wi-Fi access point, web
 - Attention escalation, quota display, and security-event overlays are implemented in `src/extensions/`.
 - Firmware is organized under `src/`; it is not required to remain a single file.
 
-See the [product requirements](docs/esp32-desk-pet-prd.md), [firmware plan](docs/desk-pet-firmware-plan.md), and [graphics and Cursor notes](docs/graphics-and-cursor.md) for design details.
+See the [product requirements](docs/prd.md), [architecture](docs/architecture.md), [runbook](docs/runbook.md), and [STATUS](docs/STATUS.md) for design and current progress.
 
 ## Hardware and wiring
 
@@ -93,7 +93,7 @@ HELP
 
 `STATUS` returns one-line JSON; `PAIR` opens a 120-second pairing window, `UNBOND` clears stored bonds, and `WANDER` exits a forced agent state. Do not put passkeys, bond keys, tokens, or other sensitive data in logs.
 
-For WSL2 USB passthrough and the complete serial checklist, see [WSL validation](docs/wsl-validation.md). For macOS setup and commands, see [Mac validation](docs/mac-validation.md).
+For WSL2 USB passthrough, macOS setup, serial commands, and the bridge checklist, see the [runbook](docs/runbook.md).
 
 ## BLE-first security
 
@@ -157,11 +157,11 @@ Validation is intentionally staged:
 1. **Tier 0, no hardware:** PlatformIO firmware builds and native `test_protocol` pass.
 2. **Tier 1, USB:** flash succeeds and the serial boot banner appears.
 3. **Tier 2, USB:** `STATUS`, `TEST`, pairing, bond, sleep, wake, and help diagnostics work.
-4. **Tier 3, phone:** nRF Connect verifies `DP-<last4-MAC>` advertising, pairing, encrypted writes, and reboot reconnect. **Blocked on a phone and physical ESP32.**
-5. **Tier 4, manual display:** a person confirms TFT expressions and overlays match the reported state. **Blocked on the assembled display and human inspection.**
-6. **Tier 5, Mac BLE:** CoreBluetooth pairing, encrypted GATT writes, reconnect, bridge API, and Cursor hooks work end to end. **Blocked on a Mac plus powered, advertising ESP32 hardware.**
+4. **Tier 3, BLE:** advertise, pair, encrypted writes, and reboot reconnect (phone nRF Connect or Mac BLE / bridge).
+5. **Tier 4, manual display:** a person confirms TFT expressions and overlays match the reported state.
+6. **Tier 5, Mac BLE:** CoreBluetooth pairing, encrypted GATT writes, reconnect, bridge API, and Cursor hooks.
 
-See the [Mac session status](docs/mac-bridge-status.md) for the current done/remaining list and the [validation guides](docs/wsl-validation.md) and [Mac validation](docs/mac-validation.md) for procedures.
+See [STATUS.md](docs/STATUS.md) for the current done/open list and the [runbook](docs/runbook.md) for procedures.
 
 ## Case and project context
 

@@ -10,20 +10,29 @@
     "afterAgentThought": [
       { "command": "scripts/cursor-hook.sh afterAgentThought" }
     ],
+    "preToolUse": [
+      { "command": "scripts/cursor-hook.sh preToolUse" }
+    ],
+    "postToolUse": [
+      { "command": "scripts/cursor-hook.sh postToolUse" }
+    ],
+    "afterFileEdit": [
+      { "command": "scripts/cursor-hook.sh afterFileEdit" }
+    ],
     "beforeShellExecution": [
       { "command": "scripts/cursor-hook.sh beforeShellExecution" }
+    ],
+    "afterShellExecution": [
+      { "command": "scripts/cursor-hook.sh afterShellExecution" }
+    ],
+    "beforeMCPExecution": [
+      { "command": "scripts/cursor-hook.sh beforeMCPExecution" }
     ],
     "afterAgentResponse": [
       { "command": "scripts/cursor-hook.sh afterAgentResponse" }
     ],
     "postToolUseFailure": [
       { "command": "scripts/cursor-hook.sh postToolUseFailure" }
-    ],
-    "beforeMCPExecution": [
-      { "command": "scripts/cursor-hook.sh beforeMCPExecution" }
-    ],
-    "afterShellExecution": [
-      { "command": "scripts/cursor-hook.sh afterShellExecution" }
     ]
   }
 }

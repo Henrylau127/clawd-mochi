@@ -168,7 +168,9 @@ After each face draw, serial prints `[face] <expression>`.
 | 2026-08-30 | 2 | PASS | `STATUS`, `TEST coding`, `PAIR`, `HELP` via pyserial — fw `0.1.0-tier2` |
 | 2026-08-30 | 2 | PASS | Re-check after steps 1–6 — fw `0.2.0-tier6`, `TEST thinking` OK |
 | 2026-08-30 | 3 | PENDING | BLE stack implemented (NimBLE 2.5); needs nRF Connect phone test |
-| — | 4 | Not run | Manual TFT check |
+| 2026-09-04 | 3 | PASS (Mac) | Independent BLE MCP reject-when-closed + Add pet LE SC bond on `DP-CC98`; phone nRF Connect optional |
+| 2026-09-04 | 5 | PASS | Tauri Add pet, encrypted `/v1/test`, bridge restart reconnect; see [mac-bridge-status.md](mac-bridge-status.md) |
+| 2026-09-04 | 4 | DRIVEN | Serial `TEST` cycled coding/thinking/idle/waiting/error/security + `WANDER`; STATUS matched each expression. Awaiting human TFT color/eyeball sign-off. |
 
 ## Optional: serial-mcp for agents
 
