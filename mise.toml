@@ -1,0 +1,8 @@
+[tools]
+rust = "latest"
+
+[env]
+_.path = [
+  "{{env.HOME}}/.platformio/penv/bin",
+  "{{env.HOME}}/.cargo/bin",
+]
