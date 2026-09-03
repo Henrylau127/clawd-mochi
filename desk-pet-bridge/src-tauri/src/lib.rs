@@ -67,11 +67,17 @@ async fn forget_device(shared: tauri::State<'_, Arc<Shared>>) -> Result<(), Stri
 }
 
 #[tauri::command]
-fn set_loopback_port(
+async fn set_loopback_port(
     shared: tauri::State<'_, Arc<Shared>>,
     port: u16,
 ) -> Result<u16, String> {
-    let port = shared.request_port(port)?;
+    let listening = shared.is_listening_on(port).await;
+    let port = crate::bridge::loopback::reject_if_occupied(port, listening)?;
+    if listening {
+        crate::bridge::loopback::save_port(port)?;
+        return Ok(port);
+    }
+    shared.request_port(port)?;
     crate::bridge::loopback::save_port(port)?;
     Ok(port)
 }

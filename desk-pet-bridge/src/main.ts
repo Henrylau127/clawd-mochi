@@ -21,11 +21,32 @@ type StatusSnapshot = {
   ts: number;
 };
 
+let portHintOverride: string | null = null;
+let committedPort = 8765;
+
 function setText(id: string, value: string) {
   const el = document.getElementById(id);
   if (el) {
     el.textContent = value;
   }
+}
+
+function setLoopbackHint(message: string, isError: boolean) {
+  const hint = document.getElementById("loopback-hint");
+  if (!hint) {
+    return;
+  }
+  hint.classList.toggle("error", isError);
+  hint.textContent = message;
+}
+
+function showPortError(message: string) {
+  portHintOverride = message;
+  setLoopbackHint(message, true);
+}
+
+function clearPortOverride() {
+  portHintOverride = null;
 }
 
 function badgeFor(ble: BlePhase): { label: string; className: string } {
@@ -54,18 +75,26 @@ async function refresh() {
     setText("pet-state", status.pet_state ?? "—");
     setText("last-error", status.last_error ?? "none");
 
-    const hint = document.getElementById("loopback-hint");
-    if (hint) {
-      hint.classList.toggle("error", Boolean(status.loopback_error));
-      hint.textContent =
+    if (typeof status.loopback_port === "number") {
+      committedPort = status.loopback_port;
+    }
+
+    if (!portHintOverride) {
+      setLoopbackHint(
         status.loopback_error ??
-        status.loopback_note ??
-        `Cursor hooks POST to ${status.loopback_addr ?? "127.0.0.1:8765"}`;
+          status.loopback_note ??
+          `Cursor hooks POST to ${status.loopback_addr ?? "127.0.0.1:8765"}`,
+        Boolean(status.loopback_error),
+      );
     }
 
     const portInput = document.getElementById("loopback-port");
-    if (portInput instanceof HTMLInputElement && document.activeElement !== portInput) {
-      portInput.value = String(status.loopback_port ?? 8765);
+    if (
+      portInput instanceof HTMLInputElement &&
+      document.activeElement !== portInput &&
+      !portHintOverride
+    ) {
+      portInput.value = String(committedPort);
     }
 
     const badge = document.getElementById("badge");
@@ -126,24 +155,54 @@ window.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const port = Number.parseInt(portInput.value, 10);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-      setText("loopback-hint", "Use a port from 1024 to 65535.");
-      document.getElementById("loopback-hint")?.classList.add("error");
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      showPortError("Use a port from 1 to 65535.");
+      portInput.setCustomValidity("Use a port from 1 to 65535.");
+      portInput.reportValidity();
       return;
     }
+    portInput.setCustomValidity("");
     void invoke<number>("set_loopback_port", { port })
-      .then(() => refresh().then(() => fitPopoverWindow()))
+      .then(() => {
+        clearPortOverride();
+        return refresh().then(() => fitPopoverWindow());
+      })
       .catch((err: unknown) => {
-        setText("loopback-hint", String(err));
-        document.getElementById("loopback-hint")?.classList.add("error");
+        showPortError(String(err));
       });
   };
 
+  const revertPortEdit = () => {
+    const portInput = document.getElementById("loopback-port");
+    if (portInput instanceof HTMLInputElement) {
+      portInput.value = String(committedPort);
+      portInput.setCustomValidity("");
+      portInput.blur();
+    }
+    clearPortOverride();
+    void refresh();
+  };
+
   bind("apply-port", applyPort);
-  document.getElementById("loopback-port")?.addEventListener("keydown", (event) => {
-    if (event instanceof KeyboardEvent && event.key === "Enter") {
+  bind("cancel-port", revertPortEdit);
+  const portField = document.getElementById("loopback-port");
+  portField?.addEventListener("input", () => {
+    clearPortOverride();
+    void refresh();
+  });
+  portField?.addEventListener("keydown", (event) => {
+    if (!(event instanceof KeyboardEvent)) {
+      return;
+    }
+    if (event.key === "Enter") {
       event.preventDefault();
       applyPort();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      revertPortEdit();
     }
   });
 
@@ -168,9 +227,14 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      void invoke("hide_status");
+    if (event.key !== "Escape") {
+      return;
     }
+    const portInput = document.getElementById("loopback-port");
+    if (event.target === portInput) {
+      return;
+    }
+    void invoke("hide_status");
   });
 
   void refresh().then(() => fitPopoverWindow());

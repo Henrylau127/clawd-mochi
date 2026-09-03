@@ -1,0 +1,125 @@
+name: Build packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    name: Firmware package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Host protocol tests
+        run: pio test -e native -f test_protocol
+
+      - name: Build ESP32-C3 firmware
+        run: pio run -e esp32-c3-super-mini
+
+      - name: Stage firmware package
+        run: |
+          set -euo pipefail
+          envdir=".pio/build/esp32-c3-super-mini"
+          out="dist/firmware"
+          mkdir -p "$out"
+          cp "$envdir/firmware.bin" "$out/"
+          cp "$envdir/firmware.elf" "$out/"
+          if [ -f "$envdir/bootloader.bin" ]; then
+            cp "$envdir/bootloader.bin" "$out/"
+          fi
+          if [ -f "$envdir/partitions.bin" ]; then
+            cp "$envdir/partitions.bin" "$out/"
+          fi
+          cat > "$out/README.txt" <<EOF
+          Desk Pet firmware ${{ github.sha }}
+          Board: ESP32-C3 Super Mini
+
+          Flash with PlatformIO from a checkout:
+            pio run -e esp32-c3-super-mini -t upload
+
+          Or with esptool (typical offsets):
+            esptool.py --chip esp32c3 write_flash \\
+              0x0 bootloader.bin \\
+              0x8000 partitions.bin \\
+              0x10000 firmware.bin
+          EOF
+          ls -lh "$out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desk-pet-firmware
+          path: dist/firmware/
+          if-no-files-found: error
+          retention-days: 14
+
+  bridge:
+    name: Bridge macOS installer
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: desk-pet-bridge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: desk-pet-bridge/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desk-pet-bridge/src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Bridge tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+      - name: Build macOS DMG
+        env:
+          CI: true
+        run: pnpm tauri build --bundles dmg --target universal-apple-darwin --ci
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desk-pet-bridge-macos
+          path: |
+            desk-pet-bridge/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14

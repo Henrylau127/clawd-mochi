@@ -174,9 +174,15 @@ article strong {
 
 .port-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto;
   gap: 8px;
   align-items: center;
+}
+
+.port-edit {
+  display: flex;
+  gap: 6px;
+  align-items: end;
 }
 
 .port-field {
@@ -200,15 +206,25 @@ article strong {
   padding: 5px 7px;
 }
 
-.port-row > button {
+.port-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border: 0;
-  background: var(--fill);
-  color: inherit;
   border-radius: 7px;
-  padding: 5px 9px;
+  padding: 0;
   cursor: pointer;
-  font-size: 12px;
-  align-self: end;
+}
+
+.port-btn-cancel {
+  background: rgba(255, 69, 58, 0.22);
+  color: #ff6961;
+}
+
+.port-btn-apply {
+  background: rgba(52, 199, 89, 0.22);
+  color: #30d158;
 }
 
 .switch-row input {

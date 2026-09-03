@@ -58,7 +58,9 @@ pub async fn serve(shared: Arc<Shared>) {
     let mut allow_nearby = true;
 
     loop {
-        let requested = *port_rx.borrow();
+        // Mark the current port seen. `borrow()` leaves the receiver dirty, so
+        // graceful shutdown would fire immediately and spin-bind forever.
+        let requested = *port_rx.borrow_and_update();
         let bound = if allow_nearby {
             allow_nearby = false;
             bind_preferred(requested)
@@ -86,7 +88,9 @@ pub async fn serve(shared: Arc<Shared>) {
                 shared
                     .set_loopback(Some(addr.clone()), actual, None, note)
                     .await;
-                let _ = loopback::save_port(actual);
+                if !cfg!(test) {
+                    let _ = loopback::save_port(actual);
+                }
                 tracing::info!("loopback API listening on http://{addr}");
 
                 let mut wait_change = port_rx.clone();

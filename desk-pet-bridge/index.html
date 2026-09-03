@@ -82,11 +82,22 @@
             <span class="row-title">127.0.0.1</span>
             <span id="loopback-hint" class="row-sub">Cursor hooks POST here</span>
           </span>
-          <label class="port-field">
-            <span>Port</span>
-            <input id="loopback-port" type="number" min="1024" max="65535" step="1" value="8765" />
-          </label>
-          <button id="apply-port" type="button">Apply</button>
+          <div class="port-edit">
+            <label class="port-field">
+              <span>Port</span>
+              <input id="loopback-port" type="number" min="1" max="65535" step="1" value="8765" />
+            </label>
+            <button id="cancel-port" class="port-btn port-btn-cancel" type="button" aria-label="Cancel" title="Cancel">
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </button>
+            <button id="apply-port" class="port-btn port-btn-apply" type="button" aria-label="Apply" title="Apply">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3.2 8.2l3.2 3.2 6.4-6.4" />
+              </svg>
+            </button>
+          </div>
         </div>
       </section>
 

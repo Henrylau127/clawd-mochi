@@ -71,6 +71,69 @@ async fn bind_exact_fails_when_port_in_use() {
     assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
 }
 
+async fn wait_listening(shared: &Shared, port: u16) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if shared.is_listening_on(port).await {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("loopback server did not start");
+}
+
+async fn free_loopback_port() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("ephemeral loopback");
+    listener.local_addr().expect("local addr").port()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn port_change_keeps_a_stable_listener() {
+    let (tx, _rx) = mpsc::channel(8);
+    let shared = Arc::new(Shared::new(tx));
+    let first = free_loopback_port().await;
+    shared.request_port(first).expect("request first port");
+    tokio::spawn(http::serve(shared.clone()));
+    wait_listening(&shared, first).await;
+
+    let second = free_loopback_port().await;
+    shared.request_port(second).expect("request second port");
+    wait_listening(&shared, second).await;
+
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    assert!(
+        shared.is_listening_on(second).await,
+        "listener must stay up after a successful port change"
+    );
+
+    let url = format!("http://127.0.0.1:{second}/v1/status");
+    let status = curl_json(&["-sS", &url]);
+    assert_eq!(status["loopback_port"], second);
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let status = curl_json(&["-sS", &url]);
+    assert_eq!(status["loopback_port"], second);
+}
+
+#[tokio::test]
+async fn occupied_port_is_rejected_before_rebind() {
+    let (tx, _rx) = mpsc::channel(8);
+    let shared = Shared::new(tx);
+    let held = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("hold a loopback port");
+    let port = held.local_addr().expect("held addr").port();
+    let listening = shared.is_listening_on(port).await;
+    let before = shared.snapshot().await.loopback_port;
+    let err = crate::bridge::loopback::reject_if_occupied(port, listening)
+        .expect_err("occupied port must be rejected");
+    assert!(err.contains("already in use"), "{err}");
+    assert_eq!(shared.snapshot().await.loopback_port, before);
+}
+
 #[tokio::test]
 async fn bind_preferred_moves_off_busy_port() {
     let held = TcpListener::bind("127.0.0.1:0")

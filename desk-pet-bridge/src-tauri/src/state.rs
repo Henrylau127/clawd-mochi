@@ -172,8 +172,20 @@ impl Shared {
 
     pub fn request_port(&self, port: u16) -> Result<u16, String> {
         let port = loopback::validate_port(port)?;
-        self.port_tx.send(port).map_err(|err| err.to_string())?;
+        let _ = self.port_tx.send_if_modified(|current| {
+            if *current == port {
+                false
+            } else {
+                *current = port;
+                true
+            }
+        });
         Ok(port)
+    }
+
+    pub async fn is_listening_on(&self, port: u16) -> bool {
+        let loopback = self.loopback.lock().await;
+        loopback.error.is_none() && loopback.addr.is_some() && loopback.port == port
     }
 
     pub async fn set_loopback(
