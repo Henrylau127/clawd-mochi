@@ -147,8 +147,35 @@ async fn snapshot_includes_queued_events_without_draining() {
     let snap = shared.snapshot().await;
     assert_eq!(snap.queue, 2);
     assert_eq!(snap.queue_items, vec![first.clone(), second.clone()]);
+    assert_eq!(snap.provider, "cursor");
     assert_eq!(shared.drain_queue().await, vec![first, second]);
     assert_eq!(shared.snapshot().await.queue, 0);
+}
+
+#[tokio::test]
+async fn roster_keeps_one_active_pet() {
+    let (tx, _rx) = mpsc::channel(8);
+    let shared = Shared::new(tx);
+    assert!(shared.snapshot().await.pets.is_empty());
+    shared
+        .remember_pet("aaa".to_string(), "DP-A1B2".to_string())
+        .await;
+    shared
+        .remember_pet("bbb".to_string(), "DP-C3D4".to_string())
+        .await;
+    let snap = shared.snapshot().await;
+    assert_eq!(snap.pets.len(), 2);
+    assert_eq!(snap.active_pet_id.as_deref(), Some("bbb"));
+    shared
+        .set_active_pet("aaa".to_string())
+        .await
+        .expect("switch active pet");
+    assert_eq!(shared.snapshot().await.active_pet_id.as_deref(), Some("aaa"));
+    shared.forget_active_pet().await;
+    let snap = shared.snapshot().await;
+    assert_eq!(snap.pets.len(), 1);
+    assert_eq!(snap.active_pet_id.as_deref(), Some("bbb"));
+    assert_eq!(snap.pets[0].name, "DP-C3D4");
 }
 
 #[tokio::test]

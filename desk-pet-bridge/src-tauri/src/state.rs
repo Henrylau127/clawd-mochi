@@ -19,6 +19,7 @@ pub enum BridgeCommand {
     StartPairing,
     StopPairing,
     Unbond,
+    AddPet,
     Send(DeskPetEvent),
 }
 
@@ -42,6 +43,9 @@ pub struct StatusSnapshot {
     pub loopback_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loopback_note: Option<String>,
+    pub provider: String,
+    pub pets: Vec<loopback::KnownPet>,
+    pub active_pet_id: Option<String>,
     pub ts: u64,
 }
 
@@ -66,6 +70,8 @@ pub struct Shared {
     inner: Mutex<BridgeInner>,
     outgoing: Mutex<EventQueue>,
     loopback: Mutex<LoopbackStatus>,
+    provider: Mutex<String>,
+    roster: Mutex<loopback::PetRoster>,
     port_tx: watch::Sender<u16>,
     _port_rx: watch::Receiver<u16>,
     pub command_tx: mpsc::Sender<BridgeCommand>,
@@ -92,6 +98,12 @@ impl Shared {
                 error: None,
                 note: None,
             }),
+            provider: Mutex::new(loopback::load_saved_provider()),
+            roster: Mutex::new(if cfg!(test) {
+                loopback::PetRoster::default()
+            } else {
+                loopback::load_roster()
+            }),
             port_tx,
             _port_rx: port_rx,
             command_tx,
@@ -106,6 +118,8 @@ impl Shared {
         drop(outgoing);
         let loopback = self.loopback.lock().await;
         let port = loopback.port;
+        let provider = self.provider.lock().await.clone();
+        let roster = self.roster.lock().await.clone();
         StatusSnapshot {
             ble: inner.ble,
             device: inner.device.clone(),
@@ -124,6 +138,9 @@ impl Shared {
                 .unwrap_or_else(|| format!("{}:{port}", loopback::HOST)),
             loopback_error: loopback.error.clone(),
             loopback_note: loopback.note.clone(),
+            provider,
+            pets: roster.pets,
+            active_pet_id: roster.active_pet_id,
             ts: unix_secs(),
         }
     }
@@ -206,6 +223,70 @@ impl Shared {
         loopback.error = error;
         loopback.note = note;
     }
+
+    pub async fn set_provider(&self, provider: String) -> Result<String, String> {
+        let provider = loopback::save_provider(&provider)?;
+        *self.provider.lock().await = provider.clone();
+        Ok(provider)
+    }
+
+    pub async fn roster_snapshot(&self) -> loopback::PetRoster {
+        self.roster.lock().await.clone()
+    }
+
+    pub async fn remember_pet(&self, id: String, name: String) {
+        let mut roster = self.roster.lock().await;
+        if let Some(existing) = roster.pets.iter_mut().find(|pet| pet.id == id) {
+            existing.name = name;
+        } else {
+            roster.pets.push(loopback::KnownPet {
+                id: id.clone(),
+                name,
+            });
+        }
+        roster.active_pet_id = Some(id);
+        persist_roster(&roster);
+    }
+
+    pub async fn set_active_pet(&self, id: String) -> Result<String, String> {
+        let mut roster = self.roster.lock().await;
+        let exists = roster
+            .pets
+            .iter()
+            .any(|pet| pet.id == id || pet.name == id);
+        if !exists {
+            return Err("That pet is not paired yet.".to_string());
+        }
+        let resolved = roster
+            .pets
+            .iter()
+            .find(|pet| pet.id == id || pet.name == id)
+            .map(|pet| pet.id.clone())
+            .unwrap_or(id);
+        roster.active_pet_id = Some(resolved.clone());
+        persist_roster(&roster);
+        Ok(resolved)
+    }
+
+    pub async fn forget_active_pet(&self) -> Option<loopback::KnownPet> {
+        let mut roster = self.roster.lock().await;
+        let active = roster.active_pet_id.clone()?;
+        let removed = roster
+            .pets
+            .iter()
+            .position(|pet| pet.id == active || pet.name == active)
+            .map(|index| roster.pets.remove(index));
+        roster.active_pet_id = roster.pets.first().map(|pet| pet.id.clone());
+        persist_roster(&roster);
+        removed
+    }
+}
+
+fn persist_roster(roster: &loopback::PetRoster) {
+    if cfg!(test) {
+        return;
+    }
+    let _ = loopback::save_roster(roster);
 }
 
 fn unix_secs() -> u64 {

@@ -59,9 +59,38 @@ async fn test_pet(shared: tauri::State<'_, Arc<Shared>>) -> Result<(), String> {
 
 #[tauri::command]
 async fn forget_device(shared: tauri::State<'_, Arc<Shared>>) -> Result<(), String> {
+    shared.forget_active_pet().await;
     shared
         .command_tx
         .send(BridgeCommand::Unbond)
+        .await
+        .map_err(|err| err.to_string())?;
+    shared
+        .command_tx
+        .send(BridgeCommand::Reconnect)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn set_active_pet(
+    shared: tauri::State<'_, Arc<Shared>>,
+    id: String,
+) -> Result<String, String> {
+    let id = shared.set_active_pet(id).await?;
+    shared
+        .command_tx
+        .send(BridgeCommand::Reconnect)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(id)
+}
+
+#[tauri::command]
+async fn add_pet(shared: tauri::State<'_, Arc<Shared>>) -> Result<(), String> {
+    shared
+        .command_tx
+        .send(BridgeCommand::AddPet)
         .await
         .map_err(|err| err.to_string())
 }
@@ -80,6 +109,14 @@ async fn set_loopback_port(
     shared.request_port(port)?;
     crate::bridge::loopback::save_port(port)?;
     Ok(port)
+}
+
+#[tauri::command]
+async fn set_provider(
+    shared: tauri::State<'_, Arc<Shared>>,
+    provider: String,
+) -> Result<String, String> {
+    shared.set_provider(provider).await
 }
 
 #[tauri::command]
@@ -140,7 +177,10 @@ pub fn run() {
             stop_pairing,
             test_pet,
             forget_device,
+            set_active_pet,
+            add_pet,
             set_loopback_port,
+            set_provider,
             hide_status,
             quit
         ])

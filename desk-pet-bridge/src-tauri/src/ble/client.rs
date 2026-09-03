@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use super::pairing::PairingWindow;
 use super::reconnect::Backoff;
+use super::roster::{self, FoundPet};
 use crate::bridge::protocol::DeskPetEvent;
 use crate::diagnostics::redact;
 use crate::state::{BlePhase, BridgeCommand, Shared};
@@ -21,6 +22,7 @@ pub const CONFIG_RX_UUID: Uuid = Uuid::from_u128(0x7d3f1b2e_5a8c_4f61_9e09_9a7d4
 struct Session {
     peripheral: Peripheral,
     cmd_rx: Characteristic,
+    id: String,
     name: String,
 }
 
@@ -69,7 +71,7 @@ pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<BridgeCommand
                 handle_command(&adapter, &shared, &mut session, &mut pairing, &mut backoff, cmd).await;
             }
             _ = tokio::time::sleep(Duration::from_millis(500)), if session.is_none() => {
-                attempt_connect(&adapter, &shared, &mut session, &mut backoff).await;
+                attempt_connect(&adapter, &shared, &mut session, &mut backoff, pairing.is_active()).await;
             }
             _ = tokio::time::sleep(Duration::from_secs(2)), if session.is_some() => {
                 if let Some(active) = session.as_ref() {
@@ -103,7 +105,7 @@ async fn handle_command(
             }
             shared.set_phase(BlePhase::Disconnected, None).await;
             backoff.reset();
-            attempt_connect(adapter, shared, session, backoff).await;
+            attempt_connect(adapter, shared, session, backoff, pairing.is_active()).await;
         }
         BridgeCommand::StartPairing => {
             pairing.start();
@@ -125,6 +127,16 @@ async fn handle_command(
             let mut event = DeskPetEvent::new("unbond");
             event.ensure_id();
             send_or_queue(shared, session, event).await;
+        }
+        BridgeCommand::AddPet => {
+            pairing.start();
+            shared.set_pairing(true).await;
+            if let Some(active) = session.take() {
+                let _ = active.peripheral.disconnect().await;
+            }
+            shared.set_phase(BlePhase::Disconnected, None).await;
+            backoff.reset();
+            attempt_connect(adapter, shared, session, backoff, true).await;
         }
         BridgeCommand::Send(event) => {
             if event.event == "pairingStart" {
@@ -173,14 +185,18 @@ async fn attempt_connect(
     shared: &Shared,
     session: &mut Option<Session>,
     backoff: &mut Backoff,
+    pairing: bool,
 ) {
     if session.is_some() {
         return;
     }
     shared.set_phase(BlePhase::Scanning, None).await;
-    match connect_once(adapter).await {
+    match connect_once(adapter, shared, pairing).await {
         Ok(Some(new_session)) => {
             tracing::info!("connected to {}", new_session.name);
+            shared
+                .remember_pet(new_session.id.clone(), new_session.name.clone())
+                .await;
             shared
                 .set_phase(BlePhase::Connected, Some(new_session.name.clone()))
                 .await;
@@ -212,7 +228,11 @@ async fn flush_queue(shared: &Shared, session: &Session) {
     }
 }
 
-async fn connect_once(adapter: &Adapter) -> Result<Option<Session>, String> {
+async fn connect_once(
+    adapter: &Adapter,
+    shared: &Shared,
+    pairing: bool,
+) -> Result<Option<Session>, String> {
     adapter
         .start_scan(ScanFilter::default())
         .await
@@ -220,48 +240,78 @@ async fn connect_once(adapter: &Adapter) -> Result<Option<Session>, String> {
     tokio::time::sleep(Duration::from_secs(4)).await;
     let _ = adapter.stop_scan().await;
 
-    let Some(peripheral) = find_desk_pet(adapter).await? else {
+    let candidates = discover_desk_pets(adapter).await?;
+    let roster = shared.roster_snapshot().await;
+    let known_ids: Vec<String> = roster
+        .pets
+        .iter()
+        .flat_map(|pet| [pet.id.clone(), pet.name.clone()])
+        .collect();
+    let found: Vec<FoundPet> = candidates
+        .iter()
+        .map(|candidate| FoundPet {
+            id: candidate.id.clone(),
+            name: candidate.name.clone(),
+        })
+        .collect();
+    let Some(chosen) = roster::choose_pet(
+        &found,
+        roster.active_pet_id.as_deref(),
+        &known_ids,
+        pairing,
+    ) else {
+        return Ok(None);
+    };
+    let Some(candidate) = candidates
+        .into_iter()
+        .find(|item| item.id == chosen.id)
+    else {
         return Ok(None);
     };
 
-    let name = peripheral
-        .properties()
+    candidate
+        .peripheral
+        .connect()
         .await
-        .ok()
-        .flatten()
-        .and_then(|props| props.local_name)
-        .unwrap_or_else(|| "DP-????".to_string());
-
-    peripheral.connect().await.map_err(|err| err.to_string())?;
-    peripheral
+        .map_err(|err| err.to_string())?;
+    candidate
+        .peripheral
         .discover_services()
         .await
         .map_err(|err| err.to_string())?;
 
-    let chars = peripheral.characteristics();
+    let chars = candidate.peripheral.characteristics();
     let cmd_rx = chars
         .iter()
         .find(|c| c.uuid == CMD_RX_UUID)
         .cloned()
         .ok_or_else(|| "command characteristic missing".to_string())?;
     if let Some(status_tx) = chars.iter().find(|c| c.uuid == STATUS_TX_UUID).cloned() {
-        if let Err(err) = peripheral.subscribe(&status_tx).await {
+        if let Err(err) = candidate.peripheral.subscribe(&status_tx).await {
             tracing::warn!("status subscribe failed: {}", redact(&err.to_string()));
         } else {
-            spawn_ack_logger(peripheral.clone());
+            spawn_ack_logger(candidate.peripheral.clone());
         }
     }
     let _ = chars.iter().find(|c| c.uuid == CONFIG_RX_UUID);
 
     Ok(Some(Session {
-        peripheral,
+        peripheral: candidate.peripheral,
         cmd_rx,
-        name,
+        id: candidate.id,
+        name: candidate.name,
     }))
 }
 
-async fn find_desk_pet(adapter: &Adapter) -> Result<Option<Peripheral>, String> {
+struct Candidate {
+    peripheral: Peripheral,
+    id: String,
+    name: String,
+}
+
+async fn discover_desk_pets(adapter: &Adapter) -> Result<Vec<Candidate>, String> {
     let peripherals = adapter.peripherals().await.map_err(|err| err.to_string())?;
+    let mut found = Vec::new();
     for peripheral in peripherals {
         let Some(props) = peripheral.properties().await.ok().flatten() else {
             continue;
@@ -269,13 +319,18 @@ async fn find_desk_pet(adapter: &Adapter) -> Result<Option<Peripheral>, String> 
         let name_ok = props
             .local_name
             .as_deref()
-            .is_some_and(|name| name.starts_with("DP-"));
+            .is_some_and(|name| name.starts_with("DP-") && name != "DP-????" && name != "DP-xxxx");
         let service_ok = props.services.contains(&SERVICE_UUID);
-        if name_ok || service_ok {
-            return Ok(Some(peripheral));
+        if !(name_ok || service_ok) {
+            continue;
         }
+        found.push(Candidate {
+            id: peripheral.id().to_string(),
+            name: roster::display_name(props.local_name),
+            peripheral,
+        });
     }
-    Ok(None)
+    Ok(found)
 }
 
 fn spawn_ack_logger(peripheral: Peripheral) {

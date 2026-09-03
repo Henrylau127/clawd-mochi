@@ -11,10 +11,28 @@
     <div class="popover">
       <header class="header">
         <div class="brand">
-          <span class="logo" aria-hidden="true"></span>
+          <span class="logo" aria-hidden="true">
+            <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+              <g fill="#3b82f6">
+                <rect x="3" y="1" width="10" height="1"/>
+                <rect x="2" y="2" width="12" height="2"/>
+                <rect x="2" y="4" width="2" height="3"/>
+                <rect x="6" y="4" width="4" height="3"/>
+                <rect x="12" y="4" width="2" height="3"/>
+                <rect x="1" y="7" width="14" height="1"/>
+                <rect x="0" y="8" width="16" height="1"/>
+                <rect x="1" y="9" width="14" height="1"/>
+                <rect x="2" y="10" width="12" height="2"/>
+                <rect x="2" y="12" width="2" height="3"/>
+                <rect x="5" y="12" width="2" height="3"/>
+                <rect x="9" y="12" width="2" height="3"/>
+                <rect x="12" y="12" width="2" height="3"/>
+              </g>
+            </svg>
+          </span>
           <div>
             <h1>Desk Pet</h1>
-            <p id="subtitle">Waiting for device</p>
+            <p id="subtitle">No pet paired</p>
           </div>
         </div>
         <span id="badge" class="badge badge-off">OFFLINE</span>
@@ -35,20 +53,9 @@
         <button id="reconnect" class="row-btn" type="button">
           <span>
             <span class="row-title">Reconnect</span>
-            <span class="row-sub">Scan again for DP-xxxx</span>
+            <span id="reconnect-sub" class="row-sub">Pair a pet in Settings</span>
           </span>
         </button>
-      </section>
-
-      <section>
-        <h2>Pairing</h2>
-        <label class="switch-row">
-          <span>
-            <span class="row-title">Pairing window</span>
-            <span class="row-sub">Open a 120s window for a new bond</span>
-          </span>
-          <input id="pairing-toggle" type="checkbox" />
-        </label>
       </section>
 
       <section>
@@ -67,42 +74,10 @@
             <strong id="last-error">none</strong>
           </article>
         </div>
-        <button id="test-pet" class="row-btn" type="button">
-          <span>
-            <span class="row-title">Test pet</span>
-            <span class="row-sub">Send a coding sessionStart</span>
-          </span>
-        </button>
       </section>
 
-      <section>
-        <h2>Loopback</h2>
-        <div class="port-row">
-          <span>
-            <span class="row-title">127.0.0.1</span>
-            <span id="loopback-hint" class="row-sub">Cursor hooks POST here</span>
-          </span>
-          <div class="port-edit">
-            <label class="port-field">
-              <span>Port</span>
-              <input id="loopback-port" type="number" min="1" max="65535" step="1" value="8765" />
-            </label>
-            <button id="cancel-port" class="port-btn port-btn-cancel" type="button" aria-label="Cancel" title="Cancel">
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-                <path d="M4 4l8 8M12 4l-8 8" />
-              </svg>
-            </button>
-            <button id="apply-port" class="port-btn port-btn-apply" type="button" aria-label="Apply" title="Apply">
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3.2 8.2l3.2 3.2 6.4-6.4" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <div id="queue-panel" class="queue-panel" hidden>
-        <div class="queue-panel-head">
+      <div id="queue-panel" class="sheet" hidden>
+        <div class="sheet-head">
           <div>
             <h2>Queue</h2>
             <p id="queue-panel-sub">No events waiting</p>
@@ -112,8 +87,106 @@
         <ul id="queue-list" class="queue-list" hidden></ul>
       </div>
 
+      <div id="settings-panel" class="sheet" hidden>
+        <div class="sheet-head">
+          <div>
+            <h2>Settings</h2>
+            <p>Pairing, hooks, and loopback</p>
+          </div>
+          <button id="close-settings" type="button" aria-label="Close settings">Close</button>
+        </div>
+        <div class="sheet-body">
+          <section>
+            <h2>Hooks</h2>
+            <label class="select-row">
+              <span>
+                <span class="row-title">Provider</span>
+                <span class="row-sub">Which agent posts desk-pet events</span>
+              </span>
+              <select id="provider" aria-label="Hook provider">
+                <option value="cursor">Cursor</option>
+                <option value="codex" disabled>Codex</option>
+                <option value="claude-code" disabled>Claude Code</option>
+                <option value="pi" disabled>Pi</option>
+              </select>
+            </label>
+          </section>
+
+          <section>
+            <h2>Pets</h2>
+            <label class="select-row">
+              <span class="row-title">Active pet</span>
+              <select id="active-pet" aria-label="Active pet">
+                <option value="">No pet paired</option>
+              </select>
+            </label>
+            <div class="pet-actions">
+              <button id="add-pet" class="pet-action pet-action-add" type="button">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M8 3.2v9.6M3.2 8h9.6" />
+                </svg>
+                Add pet
+              </button>
+              <button id="forget" class="pet-action pet-action-remove" type="button">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3.2 4.4h9.6M6.2 4.4V3.2h3.6v1.2M5.4 6.2v5.2M8 6.2v5.2M10.6 6.2v5.2M4.4 4.4l.6 8.2h6l.6-8.2" />
+                </svg>
+                Remove pet
+              </button>
+            </div>
+          </section>
+
+          <section>
+            <h2>Pairing</h2>
+            <label class="switch-row">
+              <span>
+                <span class="row-title">Pairing window</span>
+                <span class="row-sub">Open a 120s window for a new bond</span>
+              </span>
+              <input id="pairing-toggle" type="checkbox" />
+            </label>
+          </section>
+
+          <section>
+            <h2>Loopback</h2>
+            <div class="port-row">
+              <span>
+                <span class="row-title">127.0.0.1</span>
+                <span id="loopback-hint" class="row-sub">Cursor hooks POST here</span>
+              </span>
+              <div class="port-edit">
+                <label class="port-field">
+                  <span>Port</span>
+                  <input id="loopback-port" type="number" min="1" max="65535" step="1" value="8765" />
+                </label>
+                <button id="cancel-port" class="port-btn port-btn-cancel" type="button" aria-label="Cancel" title="Cancel">
+                  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M4 4l8 8M12 4l-8 8" />
+                  </svg>
+                </button>
+                <button id="apply-port" class="port-btn port-btn-apply" type="button" aria-label="Apply" title="Apply">
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3.2 8.2l3.2 3.2 6.4-6.4" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2>Diagnostics</h2>
+            <button id="test-pet" class="row-btn" type="button">
+              <span>
+                <span class="row-title">Test pet</span>
+                <span class="row-sub">Send a coding sessionStart</span>
+              </span>
+            </button>
+          </section>
+        </div>
+      </div>
+
       <div id="forget-confirm" class="confirm" hidden>
-        <p>Erase stored bonds? You will need to pair again.</p>
+        <p id="forget-copy">Remove the active pet from this Mac? You will need to pair it again.</p>
         <div class="confirm-actions">
           <button id="forget-no" type="button">Cancel</button>
           <button id="forget-yes" class="destructive" type="button">Erase</button>
@@ -121,7 +194,7 @@
       </div>
 
       <footer>
-        <button id="forget" type="button">Forget</button>
+        <button id="open-settings" type="button" aria-expanded="false">Settings</button>
         <button id="quit" type="button">Quit</button>
       </footer>
     </div>

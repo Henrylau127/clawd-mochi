@@ -9,6 +9,7 @@
 html,
 body {
   margin: 0;
+  height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
   background: transparent;
@@ -26,6 +27,10 @@ body::-webkit-scrollbar,
   box-sizing: border-box;
   background: transparent;
   padding: 12px 14px 10px;
+}
+
+.popover.settings-open {
+  min-height: 100%;
 }
 
 .header {
@@ -46,11 +51,14 @@ body::-webkit-scrollbar,
 .logo {
   width: 24px;
   height: 24px;
-  border-radius: 7px;
-  background:
-    radial-gradient(circle at 30% 30%, #7dd3fc, transparent 45%),
-    linear-gradient(160deg, #2563eb, #0f172a);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  display: grid;
+  place-items: center;
+}
+
+.logo svg {
+  width: 22px;
+  height: 22px;
+  display: block;
 }
 
 h1 {
@@ -278,7 +286,7 @@ article strong,
   left: 12px;
   right: 12px;
   bottom: 40px;
-  z-index: 2;
+  z-index: 4;
   padding: 8px 10px;
   border-radius: 10px;
   background: rgba(58, 29, 28, 0.72);
@@ -325,7 +333,7 @@ footer {
   font-size: 11px;
 }
 
-.queue-panel {
+.sheet {
   position: absolute;
   left: 12px;
   right: 12px;
@@ -341,28 +349,29 @@ footer {
   border: 1px solid var(--line);
 }
 
-.queue-panel[hidden] {
+.sheet[hidden] {
   display: none;
 }
 
-.queue-panel-head {
+.sheet-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  flex-shrink: 0;
 }
 
-.queue-panel-head h2 {
+.sheet-head h2 {
   margin: 0;
 }
 
-.queue-panel-head p {
+.sheet-head p {
   margin: 2px 0 0;
   color: #8e8e93;
   font-size: 11px;
 }
 
-.queue-panel-head button {
+.sheet-head button {
   border: 0;
   background: var(--fill);
   color: inherit;
@@ -370,6 +379,110 @@ footer {
   padding: 5px 9px;
   cursor: pointer;
   font-size: 12px;
+}
+
+.sheet-body {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.popover.settings-open .sheet-body section {
+  padding: 10px 0;
+}
+
+.popover.settings-open .sheet-body {
+  gap: 2px;
+}
+
+.sheet-body section:first-child {
+  padding-top: 0;
+}
+
+.select-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0 0;
+}
+
+.select-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 0;
+}
+
+.select-row select,
+.select-stack select {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background-color: var(--fill);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%238e8e93' d='M1.2 1.6L6 6.4l4.8-4.8' stroke='%238e8e93' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 7px;
+  color: inherit;
+  font-size: 12px;
+  padding: 6px 26px 6px 8px;
+  cursor: pointer;
+}
+
+.select-row select {
+  flex: 1;
+  min-width: 0;
+  max-width: 140px;
+}
+
+.pet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pet-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pet-action svg {
+  flex-shrink: 0;
+}
+
+.pet-action-add {
+  background: rgba(10, 132, 255, 0.22);
+  color: #64b5ff;
+}
+
+.pet-action-remove {
+  background: rgba(255, 69, 58, 0.22);
+  color: #ff6961;
+}
+
+.select-stack select {
+  width: 100%;
+}
+
+.select-row select:disabled,
+.select-stack select:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+footer button[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .queue-list {

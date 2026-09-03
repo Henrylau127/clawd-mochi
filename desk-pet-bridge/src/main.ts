@@ -12,6 +12,11 @@ type QueueEvent = {
   ts?: string | null;
 };
 
+type KnownPet = {
+  id: string;
+  name: string;
+};
+
 type StatusSnapshot = {
   ble: BlePhase;
   device: string | null;
@@ -27,6 +32,9 @@ type StatusSnapshot = {
   loopback_addr?: string;
   loopback_error?: string | null;
   loopback_note?: string | null;
+  provider?: string;
+  pets?: KnownPet[];
+  active_pet_id?: string | null;
   ts: number;
 };
 
@@ -61,8 +69,20 @@ function clearPortOverride() {
 }
 
 function isQueueOpen(): boolean {
-  const panel = document.getElementById("queue-panel");
+  return isOpen("queue-panel");
+}
+
+function isSettingsOpen(): boolean {
+  return isOpen("settings-panel");
+}
+
+function isOpen(id: string): boolean {
+  const panel = document.getElementById(id);
   return Boolean(panel && !panel.hasAttribute("hidden"));
+}
+
+function isForgetConfirmOpen(): boolean {
+  return isOpen("forget-confirm");
 }
 
 function schedulePoll() {
@@ -75,6 +95,9 @@ function schedulePoll() {
 }
 
 function setQueueOpen(open: boolean) {
+  if (open) {
+    setSettingsOpen(false);
+  }
   const panel = document.getElementById("queue-panel");
   const trigger = document.getElementById("open-queue");
   panel?.toggleAttribute("hidden", !open);
@@ -84,6 +107,110 @@ function setQueueOpen(open: boolean) {
     void refresh();
   }
   schedulePoll();
+}
+
+function setSettingsOpen(open: boolean) {
+  if (open) {
+    const queue = document.getElementById("queue-panel");
+    const queueTrigger = document.getElementById("open-queue");
+    queue?.setAttribute("hidden", "");
+    queueTrigger?.setAttribute("aria-expanded", "false");
+  }
+  const panel = document.getElementById("settings-panel");
+  const trigger = document.getElementById("open-settings");
+  const popover = document.querySelector(".popover");
+  panel?.toggleAttribute("hidden", !open);
+  trigger?.setAttribute("aria-expanded", open ? "true" : "false");
+  popover?.classList.toggle("settings-open", open);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      void fitPopoverWindow();
+    });
+  });
+}
+
+function providerLabel(provider: string): string {
+  switch (provider) {
+    case "cursor":
+      return "Cursor";
+    case "codex":
+      return "Codex";
+    case "claude-code":
+      return "Claude Code";
+    case "pi":
+      return "Pi";
+    default:
+      return provider;
+  }
+}
+
+function sourceLabel(source: string): string {
+  switch (source) {
+    case "bridge":
+      return "Bridge";
+    case "test":
+      return "Test";
+    default:
+      return providerLabel(source);
+  }
+}
+
+function camelToTitle(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function queueTitle(item: QueueEvent): string {
+  switch (item.state) {
+    case "thinking":
+      return "Bot is thinking";
+    case "coding":
+      return "Bot is coding";
+    case "idle":
+      return "Bot is idle";
+    case "waiting":
+    case "waiting_for_user":
+      return "Waiting for you";
+    case "error":
+      return "Bot hit an error";
+    case "security":
+      return "Security alert";
+    default:
+      if (item.state) {
+        return `Bot is ${item.state.replace(/_/g, " ")}`;
+      }
+      break;
+  }
+  switch (item.event) {
+    case "sessionStart":
+      return "Session started";
+    case "sessionEnd":
+      return "Session ended";
+    case "sleep":
+      return "Sleeping";
+    case "wake":
+      return "Waking up";
+    case "pairingStart":
+      return "Pairing started";
+    case "pairingStop":
+      return "Pairing stopped";
+    case "unbond":
+      return "Device forgotten";
+    case "attentionRequired":
+      return "Needs attention";
+    case "attentionCleared":
+      return "Attention cleared";
+    case "securityEvent":
+      return "Security event";
+    case "quotaUpdate":
+      return "Quota updated";
+    case "stateUpdate":
+      return "State update";
+    default:
+      return camelToTitle(item.event);
+  }
 }
 
 function renderQueue(items: QueueEvent[]) {
@@ -116,15 +243,89 @@ function renderQueue(items: QueueEvent[]) {
     const row = document.createElement("li");
     const title = document.createElement("span");
     title.className = "queue-item-event";
-    title.textContent = item.event;
+    title.textContent = queueTitle(item);
     const meta = document.createElement("span");
     meta.className = "queue-item-meta";
-    const parts = [item.state, item.source, item.id].filter(
-      (part): part is string => typeof part === "string" && part.length > 0,
-    );
+    const parts = [
+      camelToTitle(item.event),
+      item.source ? sourceLabel(item.source) : null,
+      item.id ?? null,
+    ].filter((part): part is string => typeof part === "string" && part.length > 0);
     meta.textContent = parts.join(" · ") || "pending";
     row.append(title, meta);
     list.append(row);
+  }
+}
+
+function activePet(status: StatusSnapshot): KnownPet | null {
+  const pets = status.pets ?? [];
+  if (pets.length === 0) {
+    return null;
+  }
+  const id = status.active_pet_id;
+  return pets.find((pet) => pet.id === id || pet.name === id) ?? pets[0] ?? null;
+}
+
+function headerSubtitle(status: StatusSnapshot): string {
+  const pet = activePet(status);
+  switch (status.ble) {
+    case "connected":
+      return status.device ?? pet?.name ?? "Connected";
+    case "scanning":
+      return pet ? `Looking for ${pet.name}` : "Looking for a pet";
+    case "disconnected":
+      return pet ? `${pet.name} is offline` : "No pet paired";
+    default: {
+      const _never: never = status.ble;
+      return _never;
+    }
+  }
+}
+
+function reconnectHint(status: StatusSnapshot): string {
+  const pet = activePet(status);
+  switch (status.ble) {
+    case "scanning":
+      return pet ? `Scanning for ${pet.name}` : "Looking for a nearby pet";
+    case "connected":
+      return pet ? `Reconnect ${pet.name}` : "Reconnect the active pet";
+    case "disconnected":
+      return pet ? `Reconnect ${pet.name}` : "Pair a pet in Settings";
+    default: {
+      const _never: never = status.ble;
+      return _never;
+    }
+  }
+}
+
+function renderPetSelect(status: StatusSnapshot) {
+  const select = document.getElementById("active-pet");
+  if (!(select instanceof HTMLSelectElement)) {
+    return;
+  }
+  const pets = status.pets ?? [];
+  const activeId = status.active_pet_id ?? "";
+  if (document.activeElement === select) {
+    return;
+  }
+  select.replaceChildren();
+  if (pets.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No pet paired";
+    select.append(option);
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  for (const pet of pets) {
+    const option = document.createElement("option");
+    option.value = pet.id;
+    option.textContent = pet.name;
+    if (pet.id === activeId || pet.name === activeId) {
+      option.selected = true;
+    }
+    select.append(option);
   }
 }
 
@@ -146,8 +347,8 @@ function badgeFor(ble: BlePhase): { label: string; className: string } {
 async function refresh() {
   try {
     const status = await invoke<StatusSnapshot>("get_status");
-    const subtitle = status.device ?? "Waiting for device";
-    setText("subtitle", subtitle);
+    setText("subtitle", headerSubtitle(status));
+    setText("reconnect-sub", reconnectHint(status));
     setText("queue", String(status.queue));
     renderQueue(status.queue_items ?? []);
     setText("last-event", status.last_event ?? "—");
@@ -159,11 +360,18 @@ async function refresh() {
       committedPort = status.loopback_port;
     }
 
+    const provider = status.provider || "cursor";
+    const providerSelect = document.getElementById("provider");
+    if (providerSelect instanceof HTMLSelectElement && document.activeElement !== providerSelect) {
+      providerSelect.value = provider;
+    }
+
     if (!portHintOverride) {
+      const addr = status.loopback_addr ?? "127.0.0.1:8765";
       setLoopbackHint(
         status.loopback_error ??
           status.loopback_note ??
-          `Cursor hooks POST to ${status.loopback_addr ?? "127.0.0.1:8765"}`,
+          `${providerLabel(provider)} hooks POST to ${addr}`,
         Boolean(status.loopback_error),
       );
     }
@@ -188,6 +396,14 @@ async function refresh() {
     if (pairing instanceof HTMLInputElement) {
       pairing.checked = status.pairing_active;
     }
+    renderPetSelect(status);
+    const forgetCopy = document.getElementById("forget-copy");
+    const current = activePet(status);
+    if (forgetCopy) {
+      forgetCopy.textContent = current
+        ? `Remove ${current.name} from this Mac? You will need to pair it again.`
+        : "Remove the active pet from this Mac? You will need to pair it again.";
+    }
   } catch (err) {
     setText("last-error", String(err));
   }
@@ -204,12 +420,24 @@ async function fitPopoverWindow() {
   }
 
   const bodyStyle = getComputedStyle(document.body);
-  const width = Math.ceil(
-    panel.offsetWidth + parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight),
-  );
-  const height = Math.ceil(
-    panel.offsetHeight + parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom),
-  );
+  const padX = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
+  const padY = parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+  const width = Math.ceil(panel.offsetWidth + padX);
+
+  if (isSettingsOpen()) {
+    const sheet = document.getElementById("settings-panel");
+    const head = sheet?.querySelector(".sheet-head");
+    const body = sheet?.querySelector(".sheet-body");
+    if (head instanceof HTMLElement && body instanceof HTMLElement) {
+      const contentH = head.offsetHeight + 8 + body.scrollHeight + 20;
+      const minH = Math.min(12 + contentH + 40, 720 - padY);
+      panel.style.minHeight = `${Math.ceil(minH)}px`;
+    }
+  } else {
+    panel.style.minHeight = "";
+  }
+
+  const height = Math.ceil(panel.offsetHeight + padY);
 
   try {
     await getCurrentWindow().setSize(new LogicalSize(width, height));
@@ -224,6 +452,15 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   bind("close-queue", () => {
     setQueueOpen(false);
+  });
+  bind("open-settings", () => {
+    setSettingsOpen(!isSettingsOpen());
+  });
+  bind("close-settings", () => {
+    setSettingsOpen(false);
+  });
+  bind("add-pet", () => {
+    void invoke("add_pet");
   });
   bind("reconnect", () => {
     void invoke("reconnect");
@@ -292,12 +529,37 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  const petSelect = document.getElementById("active-pet");
+  petSelect?.addEventListener("change", () => {
+    if (!(petSelect instanceof HTMLSelectElement) || petSelect.value.length === 0) {
+      return;
+    }
+    void invoke<string>("set_active_pet", { id: petSelect.value })
+      .then(() => refresh())
+      .catch((err: unknown) => {
+        setText("last-error", String(err));
+      });
+  });
+
   const pairing = document.getElementById("pairing-toggle");
   pairing?.addEventListener("change", () => {
     if (!(pairing instanceof HTMLInputElement)) {
       return;
     }
     void invoke(pairing.checked ? "start_pairing" : "stop_pairing");
+  });
+
+  const providerSelect = document.getElementById("provider");
+  providerSelect?.addEventListener("change", () => {
+    if (!(providerSelect instanceof HTMLSelectElement)) {
+      return;
+    }
+    void invoke<string>("set_provider", { provider: providerSelect.value })
+      .then(() => refresh())
+      .catch((err: unknown) => {
+        setText("last-error", String(err));
+        providerSelect.value = "cursor";
+      });
   });
 
   const confirmBox = document.getElementById("forget-confirm");
@@ -320,8 +582,16 @@ window.addEventListener("DOMContentLoaded", () => {
     if (event.target === portInput) {
       return;
     }
+    if (isForgetConfirmOpen()) {
+      document.getElementById("forget-confirm")?.setAttribute("hidden", "");
+      return;
+    }
     if (isQueueOpen()) {
       setQueueOpen(false);
+      return;
+    }
+    if (isSettingsOpen()) {
+      setSettingsOpen(false);
       return;
     }
     void invoke("hide_status");

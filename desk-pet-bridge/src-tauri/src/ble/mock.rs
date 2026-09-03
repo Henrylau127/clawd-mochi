@@ -157,6 +157,18 @@ async fn handle_command(
             event.ensure_id();
             apply_event(shared, pet, pairing, event).await;
         }
+        BridgeCommand::AddPet => {
+            pairing.start();
+            shared.set_pairing(true).await;
+            shared
+                .remember_pet("mock".to_string(), MOCK_DEVICE_NAME.to_string())
+                .await;
+            shared.set_phase(BlePhase::Disconnected, None).await;
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            shared
+                .set_phase(BlePhase::Connected, Some(MOCK_DEVICE_NAME.to_string()))
+                .await;
+        }
         BridgeCommand::Send(event) => {
             apply_event(shared, pet, pairing, event).await;
         }
