@@ -1,14 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the status window and tray",
+  "description": "Capability for the tray popover",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:tray:default",
-    "core:menu:default",
     "core:window:allow-show",
     "core:window:allow-hide",
-    "core:window:allow-set-focus"
+    "core:window:allow-set-focus",
+    "core:window:allow-set-position",
+    "positioner:allow-move-window"
   ]
 }

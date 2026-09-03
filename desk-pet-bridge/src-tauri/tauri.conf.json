@@ -14,18 +14,23 @@
     "windows": [
       {
         "label": "main",
-        "title": "Desk Pet Status",
-        "width": 380,
-        "height": 360,
+        "title": "Desk Pet Bridge",
+        "width": 340,
+        "height": 488,
         "visible": false,
         "skipTaskbar": true,
-        "resizable": false
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "shadow": false,
+        "focus": false
       }
     ],
     "security": {
       "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8765"
     },
-    "macOSPrivateApi": false
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

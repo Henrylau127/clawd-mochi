@@ -70,6 +70,11 @@ fn hide_status(window: tauri::WebviewWindow) -> Result<(), String> {
     window.hide().map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+fn quit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -81,6 +86,7 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_positioner::init())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -95,9 +101,16 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+                tauri::WindowEvent::Focused(false) => {
+                    crate::tray::note_closed(window.app_handle());
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -107,7 +120,8 @@ pub fn run() {
             stop_pairing,
             test_pet,
             forget_device,
-            hide_status
+            hide_status,
+            quit
         ])
         .run(tauri::generate_context!())
         .expect("error while running desk-pet-bridge");

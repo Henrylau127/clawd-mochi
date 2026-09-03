@@ -4,29 +4,97 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Desk Pet Status</title>
+    <title>Desk Pet Bridge</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
-    <main>
-      <h1>Desk Pet Bridge</h1>
-      <dl>
-        <div><dt>BLE</dt><dd id="ble">disconnected</dd></div>
-        <div><dt>Device</dt><dd id="device">—</dd></div>
-        <div><dt>Queue</dt><dd id="queue">0</dd></div>
-        <div><dt>Pairing</dt><dd id="pairing">off</dd></div>
-        <div><dt>Last event</dt><dd id="last-event">—</dd></div>
-        <div><dt>Last error</dt><dd id="last-error">—</dd></div>
-      </dl>
-      <div class="actions">
-        <button id="reconnect" type="button">Reconnect</button>
-        <button id="start-pairing" type="button">Start pairing</button>
-        <button id="stop-pairing" type="button">Stop pairing</button>
-        <button id="test-pet" type="button">Test pet</button>
-        <button id="forget" type="button">Forget device</button>
-        <button id="hide" type="button">Hide</button>
-      </div>
-      <p class="hint">Loopback API: <code>127.0.0.1:8765</code></p>
-    </main>
+    <div class="popover">
+      <header class="header">
+        <div class="brand">
+          <span class="logo" aria-hidden="true"></span>
+          <div>
+            <h1>Desk Pet</h1>
+            <p id="subtitle">Waiting for device</p>
+          </div>
+        </div>
+        <span id="badge" class="badge badge-off">OFFLINE</span>
+      </header>
+
+      <section>
+        <h2>Connection</h2>
+        <div class="cards">
+          <article>
+            <span class="card-label">Queue</span>
+            <strong id="queue">0</strong>
+          </article>
+          <article>
+            <span class="card-label">Last event</span>
+            <strong id="last-event">—</strong>
+          </article>
+        </div>
+        <button id="reconnect" class="row-btn" type="button">
+          <span>
+            <span class="row-title">Reconnect</span>
+            <span class="row-sub">Scan again for DP-xxxx</span>
+          </span>
+        </button>
+      </section>
+
+      <section>
+        <h2>Pairing</h2>
+        <label class="switch-row">
+          <span>
+            <span class="row-title">Pairing window</span>
+            <span class="row-sub">Open a 120s window for a new bond</span>
+          </span>
+          <input id="pairing-toggle" type="checkbox" />
+        </label>
+      </section>
+
+      <section>
+        <h2>Pet</h2>
+        <div class="cards three">
+          <article>
+            <span class="card-label">Mode</span>
+            <strong id="pet-mode">wander</strong>
+          </article>
+          <article>
+            <span class="card-label">State</span>
+            <strong id="pet-state">idle</strong>
+          </article>
+          <article>
+            <span class="card-label">Error</span>
+            <strong id="last-error">none</strong>
+          </article>
+        </div>
+        <button id="test-pet" class="row-btn" type="button">
+          <span>
+            <span class="row-title">Test pet</span>
+            <span class="row-sub">Send a coding sessionStart</span>
+          </span>
+        </button>
+      </section>
+
+      <section class="danger" id="forget-section">
+        <button id="forget" class="row-btn" type="button">
+          <span>
+            <span class="row-title">Forget device</span>
+            <span class="row-sub">Erase bonds on the pet</span>
+          </span>
+        </button>
+        <div id="forget-confirm" class="confirm" hidden>
+          <p>Erase stored bonds? You will need to pair again.</p>
+          <div class="confirm-actions">
+            <button id="forget-no" type="button">Cancel</button>
+            <button id="forget-yes" class="destructive" type="button">Erase</button>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <span class="hint">127.0.0.1:8765</span>
+        <button id="quit" type="button">Quit</button>
+      </footer>
+    </div>
   </body>
 </html>

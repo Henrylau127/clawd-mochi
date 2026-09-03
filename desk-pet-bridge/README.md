@@ -29,7 +29,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-Tray actions: Reconnect, Start pairing, Stop pairing, Test pet, Show status, Quit.
+Tray actions: click the menu-bar icon to open the status popover (not a dropdown menu). Click outside or press Escape to dismiss. Use **Quit** in the popover footer.
 
 macOS will prompt for Bluetooth access. Pairing uses the ESP32 120s window and the passkey shown on the TFT.
 

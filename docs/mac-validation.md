@@ -74,7 +74,7 @@ pnpm tauri dev
 
 Checklist:
 
-1. Menu-bar icon appears (no dock icon).
+1. Menu-bar icon opens a popover panel (not a dropdown that launches a separate window).
 2. macOS Bluetooth permission prompt is accepted.
 3. Tray **Start pairing** (or serial `PAIR`) opens the 120s window; passkey is on the TFT.
 4. `curl -s http://127.0.0.1:8765/v1/status` shows `connected` and a `DP-` name.

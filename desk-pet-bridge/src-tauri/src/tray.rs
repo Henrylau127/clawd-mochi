@@ -1,79 +1,71 @@
+use std::sync::Mutex;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tauri::image::Image;
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_positioner::{Position, WindowExt};
 
-use crate::bridge::protocol::DeskPetEvent;
-use crate::state::{BridgeCommand, Shared};
+struct PopoverGate {
+    closed_at: Option<Instant>,
+}
 
-pub fn setup(app: &AppHandle, shared: Arc<Shared>) -> tauri::Result<()> {
-    let reconnect = MenuItemBuilder::with_id("reconnect", "Reconnect").build(app)?;
-    let start_pairing = MenuItemBuilder::with_id("start-pairing", "Start pairing").build(app)?;
-    let stop_pairing = MenuItemBuilder::with_id("stop-pairing", "Stop pairing").build(app)?;
-    let test_pet = MenuItemBuilder::with_id("test-pet", "Test pet").build(app)?;
-    let show_status = MenuItemBuilder::with_id("show-status", "Show status").build(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-
-    let menu = MenuBuilder::new(app)
-        .item(&reconnect)
-        .item(&start_pairing)
-        .item(&stop_pairing)
-        .separator()
-        .item(&test_pet)
-        .item(&show_status)
-        .separator()
-        .item(&quit)
-        .build()?;
+pub fn setup(app: &AppHandle, _shared: Arc<crate::state::Shared>) -> tauri::Result<()> {
+    app.manage(Mutex::new(PopoverGate { closed_at: None }));
 
     let icon = Image::from_bytes(include_bytes!("../icons/trayTemplate.png"))?;
-    let shared_for_menu = shared.clone();
     TrayIconBuilder::with_id("desk-pet")
         .icon(icon)
         .icon_as_template(true)
         .tooltip("Desk Pet Bridge")
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(move |app, event| {
-            let shared = shared_for_menu.clone();
-            let app = app.clone();
-            let id = event.id().as_ref().to_string();
-            tauri::async_runtime::spawn(async move {
-                handle_menu(&app, &shared, &id).await;
-            });
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                toggle_popover(tray.app_handle());
+            }
         })
         .build(app)?;
 
     Ok(())
 }
 
-async fn handle_menu(app: &AppHandle, shared: &Shared, id: &str) {
-    match id {
-        "reconnect" => {
-            let _ = shared.command_tx.send(BridgeCommand::Reconnect).await;
+pub fn note_closed(app: &AppHandle) {
+    if let Some(gate) = app.try_state::<Mutex<PopoverGate>>() {
+        if let Ok(mut gate) = gate.lock() {
+            gate.closed_at = Some(Instant::now());
         }
-        "start-pairing" => {
-            let _ = shared.command_tx.send(BridgeCommand::StartPairing).await;
-        }
-        "stop-pairing" => {
-            let _ = shared.command_tx.send(BridgeCommand::StopPairing).await;
-        }
-        "test-pet" => {
-            let mut event = DeskPetEvent::new("sessionStart").with_state("coding");
-            event.source = Some("test".to_string());
-            event.ensure_id();
-            let _ = shared.command_tx.send(BridgeCommand::Send(event)).await;
-        }
-        "show-status" => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
+    }
+}
+
+fn toggle_popover(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+
+    if window.is_visible().unwrap_or(false) {
+        note_closed(app);
+        let _ = window.hide();
+        return;
+    }
+
+    if let Some(gate) = app.try_state::<Mutex<PopoverGate>>() {
+        if let Ok(gate) = gate.lock() {
+            if let Some(closed_at) = gate.closed_at {
+                if closed_at.elapsed() < Duration::from_millis(250) {
+                    return;
+                }
             }
         }
-        "quit" => {
-            app.exit(0);
-        }
-        _ => {}
     }
+
+    let _ = window.as_ref().window().move_window(Position::TrayBottomCenter);
+    let _ = window.show();
+    let _ = window.set_focus();
 }
