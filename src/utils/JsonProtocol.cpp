@@ -10,6 +10,9 @@ void (*gOnAttentionRequired)() = nullptr;
 void (*gOnAttentionCleared)() = nullptr;
 void (*gOnSecurityEvent)(const char*) = nullptr;
 void (*gOnQuotaUpdate)(uint8_t) = nullptr;
+void (*gOnPairingStart)() = nullptr;
+void (*gOnPairingStop)() = nullptr;
+void (*gOnUnbond)() = nullptr;
 
 }  // namespace
 
@@ -19,6 +22,12 @@ void JsonProtocol::setEventHooks(void (*onAttentionRequired)(), void (*onAttenti
   gOnAttentionCleared = onAttentionCleared;
   gOnSecurityEvent = onSecurityEvent;
   gOnQuotaUpdate = onQuotaUpdate;
+}
+
+void JsonProtocol::setPairingHooks(void (*onPairingStart)(), void (*onPairingStop)(), void (*onUnbond)()) {
+  gOnPairingStart = onPairingStart;
+  gOnPairingStop = onPairingStop;
+  gOnUnbond = onUnbond;
 }
 
 JsonParseResult JsonProtocol::parseCommand(const char* json, size_t len) {
@@ -121,6 +130,27 @@ TransitionResult JsonProtocol::applyEvent(PetStateMachine& sm, const JsonParseRe
     const TransitionResult tr = sm.onQuotaUpdate(pct);
     if (tr == TransitionResult::OK && gOnQuotaUpdate != nullptr) {
       gOnQuotaUpdate(pct);
+    }
+    return tr;
+  }
+  if (strcmp(parsed.event, "pairingStart") == 0) {
+    const TransitionResult tr = sm.onPairingStart();
+    if (tr == TransitionResult::OK && gOnPairingStart != nullptr) {
+      gOnPairingStart();
+    }
+    return tr;
+  }
+  if (strcmp(parsed.event, "pairingStop") == 0) {
+    const TransitionResult tr = sm.onPairingStop();
+    if (tr == TransitionResult::OK && gOnPairingStop != nullptr) {
+      gOnPairingStop();
+    }
+    return tr;
+  }
+  if (strcmp(parsed.event, "unbond") == 0) {
+    const TransitionResult tr = sm.onUnbond();
+    if (tr == TransitionResult::OK && gOnUnbond != nullptr) {
+      gOnUnbond();
     }
     return tr;
   }

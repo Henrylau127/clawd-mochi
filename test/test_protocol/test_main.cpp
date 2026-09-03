@@ -93,6 +93,28 @@ static void test_attention_events() {
   TEST_ASSERT_FALSE(sm.attentionActive);
 }
 
+static void test_pairing_json_events() {
+  PetStateMachine sm;
+  const char* startJson = "{\"id\":\"p1\",\"event\":\"pairingStart\"}";
+  const JsonParseResult startParsed = JsonProtocol::parseCommand(startJson, strlen(startJson));
+  TEST_ASSERT_TRUE(startParsed.ok);
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, startParsed));
+  TEST_ASSERT_TRUE(sm.pairingActive);
+
+  const char* stopJson = "{\"id\":\"p2\",\"event\":\"pairingStop\"}";
+  const JsonParseResult stopParsed = JsonProtocol::parseCommand(stopJson, strlen(stopJson));
+  TEST_ASSERT_TRUE(stopParsed.ok);
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, stopParsed));
+  TEST_ASSERT_FALSE(sm.pairingActive);
+
+  sm.pairingActive = true;
+  const char* unbondJson = "{\"id\":\"p3\",\"event\":\"unbond\"}";
+  const JsonParseResult unbondParsed = JsonProtocol::parseCommand(unbondJson, strlen(unbondJson));
+  TEST_ASSERT_TRUE(unbondParsed.ok);
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, unbondParsed));
+  TEST_ASSERT_FALSE(sm.pairingActive);
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_malformed_json);
@@ -103,5 +125,6 @@ int main(int argc, char** argv) {
   RUN_TEST(test_wander_agent_wander_transitions);
   RUN_TEST(test_status_json_fields);
   RUN_TEST(test_ack_error_shape);
+  RUN_TEST(test_pairing_json_events);
   return UNITY_END();
 }

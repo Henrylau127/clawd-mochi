@@ -50,6 +50,7 @@ struct PetStateMachine {
   TransitionResult onWake();
   TransitionResult onTestExpression(const char* expr);
   TransitionResult onPairingStart();
+  TransitionResult onPairingStop();
   TransitionResult onUnbond();
   TransitionResult onAttentionRequired();
   TransitionResult onAttentionCleared();

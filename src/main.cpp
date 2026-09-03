@@ -45,6 +45,9 @@ void onAttentionRequiredHook() { gAttention.onAttentionRequired(); }
 void onAttentionClearedHook() { gAttention.onAttentionCleared(); }
 void onSecurityEventHook(const char* type) { gSecurity.trigger(type); }
 void onQuotaUpdateHook(uint8_t percent) { gQuota.setPercent(percent); }
+void onPairingStartHook() { gBleSecurity.startPairingWindow(); }
+void onPairingStopHook() { gBleSecurity.stopPairingWindow(); }
+void onUnbondHook() { gBleSecurity.eraseBonds(); }
 
 String deviceNameFromMac() {
   uint8_t mac[6] = {};
@@ -187,6 +190,7 @@ void setup() {
 
   JsonProtocol::setEventHooks(onAttentionRequiredHook, onAttentionClearedHook, onSecurityEventHook,
                               onQuotaUpdateHook);
+  JsonProtocol::setPairingHooks(onPairingStartHook, onPairingStopHook, onUnbondHook);
 
   gBleSecurity.begin();
   const String deviceName = deviceNameFromMac();

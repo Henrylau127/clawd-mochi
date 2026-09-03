@@ -157,6 +157,11 @@ TransitionResult PetStateMachine::onPairingStart() {
   return TransitionResult::OK;
 }
 
+TransitionResult PetStateMachine::onPairingStop() {
+  pairingActive = false;
+  return TransitionResult::OK;
+}
+
 TransitionResult PetStateMachine::onUnbond() {
   pairingActive = false;
   bleConnected = false;

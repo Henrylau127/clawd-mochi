@@ -1,6 +1,6 @@
 #pragma once
 
-#define DESKPET_FW_VERSION "0.2.0-tier6"
+#define DESKPET_FW_VERSION "0.2.1-mac1"
 
 // Display pins (do not change)
 #define TFT_CS  4
