@@ -29,6 +29,10 @@ pub struct StatusSnapshot {
     pub pairing_active: bool,
     pub last_event: Option<String>,
     pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pet_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pet_state: Option<String>,
     pub ts: u64,
 }
 
@@ -38,6 +42,8 @@ struct BridgeInner {
     pairing_active: bool,
     last_event: Option<String>,
     last_error: Option<String>,
+    simulated_mode: Option<String>,
+    simulated_state: Option<String>,
 }
 
 pub struct Shared {
@@ -55,6 +61,8 @@ impl Shared {
                 pairing_active: false,
                 last_event: None,
                 last_error: None,
+                simulated_mode: None,
+                simulated_state: None,
             }),
             outgoing: Mutex::new(EventQueue::default()),
             command_tx,
@@ -71,6 +79,8 @@ impl Shared {
             pairing_active: inner.pairing_active,
             last_event: inner.last_event.clone(),
             last_error: inner.last_error.clone(),
+            pet_mode: inner.simulated_mode.clone(),
+            pet_state: inner.simulated_state.clone(),
             ts: unix_secs(),
         }
     }
@@ -96,6 +106,12 @@ impl Shared {
 
     pub async fn set_error(&self, error: Option<String>) {
         self.inner.lock().await.last_error = error;
+    }
+
+    pub async fn set_simulated_pet(&self, mode: &str, state: &str) {
+        let mut inner = self.inner.lock().await;
+        inner.simulated_mode = Some(mode.to_string());
+        inner.simulated_state = Some(state.to_string());
     }
 
     pub async fn is_connected(&self) -> bool {

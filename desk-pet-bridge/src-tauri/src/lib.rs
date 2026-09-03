@@ -112,3 +112,6 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running desk-pet-bridge");
 }
+
+#[cfg(test)]
+mod hardware_free_tests;

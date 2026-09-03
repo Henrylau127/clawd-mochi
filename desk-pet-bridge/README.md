@@ -55,6 +55,23 @@ curl -s -X POST http://127.0.0.1:8765/v1/test -H 'Content-Type: application/json
 
 Project Cursor hooks in `.cursor/hooks.json` POST through `scripts/cursor-hook.sh`. They stay silent if the bridge is not running.
 
+## Tests without hardware
+
+The ESP32 is not required for protocol or bridge tests. A simulated `DP-TEST` peripheral implements the same JSON events as firmware:
+
+```bash
+./scripts/validate-host.sh
+```
+
+To run the menu-bar app against the simulator instead of CoreBluetooth:
+
+```bash
+cd desk-pet-bridge
+DESKPET_BLE_MOCK=1 pnpm tauri dev
+curl -s http://127.0.0.1:8765/v1/status
+# ble=connected, device=DP-TEST
+```
+
 ## Tests
 
 ```bash

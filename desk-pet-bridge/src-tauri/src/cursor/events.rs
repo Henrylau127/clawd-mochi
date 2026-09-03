@@ -46,7 +46,7 @@ pub fn map_incoming(mut body: Value) -> Result<Value, ProtocolError> {
         "afterShellExecution" | "postToolUse" => ("stateUpdate", Some("idle")),
         "postToolUseFailure" => ("stateUpdate", Some("error")),
         "" => return Err(ProtocolError::UnknownEvent),
-        _ => ("stateUpdate", Some("idle")),
+        _ => return Err(ProtocolError::UnknownEvent),
     };
 
     let mut mapped = json!({
@@ -83,5 +83,10 @@ mod tests {
         assert_eq!(mapped["event"], "sessionStart");
         assert_eq!(mapped["state"], "coding");
         assert!(mapped.get("hook").is_none());
+    }
+
+    #[test]
+    fn rejects_unknown_event_name() {
+        assert!(map_incoming(json!({"event": "dropTable"})).is_err());
     }
 }

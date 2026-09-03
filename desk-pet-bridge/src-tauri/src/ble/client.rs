@@ -25,6 +25,11 @@ struct Session {
 }
 
 pub async fn run(shared: Arc<Shared>, mut commands: mpsc::Receiver<BridgeCommand>) {
+    if super::mock::mock_enabled() {
+        super::mock::run(shared, commands).await;
+        return;
+    }
+
     let manager = match Manager::new().await {
         Ok(manager) => manager,
         Err(err) => {

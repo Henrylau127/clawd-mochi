@@ -115,6 +115,21 @@ static void test_pairing_json_events() {
   TEST_ASSERT_FALSE(sm.pairingActive);
 }
 
+static void test_sleep_wake_json_events() {
+  PetStateMachine sm;
+  const char* sleepJson = "{\"id\":\"s1\",\"event\":\"sleep\"}";
+  const JsonParseResult sleepParsed = JsonProtocol::parseCommand(sleepJson, strlen(sleepJson));
+  TEST_ASSERT_TRUE(sleepParsed.ok);
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, sleepParsed));
+  TEST_ASSERT_EQUAL(static_cast<int>(PetMode::SLEEP), static_cast<int>(sm.mode));
+
+  const char* wakeJson = "{\"id\":\"s2\",\"event\":\"wake\"}";
+  const JsonParseResult wakeParsed = JsonProtocol::parseCommand(wakeJson, strlen(wakeJson));
+  TEST_ASSERT_TRUE(wakeParsed.ok);
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, wakeParsed));
+  TEST_ASSERT_EQUAL(static_cast<int>(PetMode::WANDER), static_cast<int>(sm.mode));
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_malformed_json);
@@ -126,5 +141,6 @@ int main(int argc, char** argv) {
   RUN_TEST(test_status_json_fields);
   RUN_TEST(test_ack_error_shape);
   RUN_TEST(test_pairing_json_events);
+  RUN_TEST(test_sleep_wake_json_events);
   return UNITY_END();
 }

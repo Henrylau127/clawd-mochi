@@ -33,6 +33,25 @@ cargo install tauri-cli --locked
 ./scripts/validate-tier0.sh
 ```
 
+## Hardware-free tests / simulated pet
+
+If the ESP32 Super Mini is not plugged in:
+
+```bash
+./scripts/validate-host.sh
+```
+
+That runs firmware `test_protocol` on the host and the Tauri bridge against an in-process `DP-TEST` mock (no Bluetooth).
+
+Run the menu bar against the mock:
+
+```bash
+cd desk-pet-bridge
+DESKPET_BLE_MOCK=1 pnpm tauri dev
+```
+
+`GET http://127.0.0.1:8765/v1/status` should show `device: DP-TEST` and `ble: connected`. Cursor hooks still POST to loopback; the mock applies firmware-equivalent state.
+
 ## Flash over native USB
 
 Connect the ESP32-C3 Super Mini, then:

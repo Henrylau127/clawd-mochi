@@ -21,29 +21,35 @@ struct HttpState {
     shared: Arc<Shared>,
 }
 
-pub async fn serve(shared: Arc<Shared>) {
-    let app = Router::new()
+pub fn router(shared: Arc<Shared>) -> Router {
+    Router::new()
         .route("/v1/cursor/event", post(cursor_event))
         .route("/v1/test", post(test_pet))
         .route("/v1/status", get(status))
         .route("/v1/power", post(power))
         .route("/v1/pairing/start", post(pairing_start))
         .route("/v1/pairing/stop", post(pairing_stop))
-        .with_state(HttpState {
-            shared: shared.clone(),
-        });
+        .with_state(HttpState { shared })
+}
 
+pub async fn serve(shared: Arc<Shared>) {
     let addr: SocketAddr = BIND.parse().expect("static bind address");
     match TcpListener::bind(addr).await {
-        Ok(listener) => {
-            tracing::info!("loopback API listening on http://{BIND}");
-            if let Err(err) = axum::serve(listener, app).await {
-                tracing::error!("loopback API stopped: {}", redact(&err.to_string()));
-            }
-        }
+        Ok(listener) => serve_with_listener(shared, listener).await,
         Err(err) => {
             tracing::error!("failed to bind {BIND}: {}", redact(&err.to_string()));
         }
+    }
+}
+
+pub async fn serve_with_listener(shared: Arc<Shared>, listener: TcpListener) {
+    let addr = listener
+        .local_addr()
+        .map(|addr| addr.to_string())
+        .unwrap_or_else(|_| BIND.to_string());
+    tracing::info!("loopback API listening on http://{addr}");
+    if let Err(err) = axum::serve(listener, router(shared)).await {
+        tracing::error!("loopback API stopped: {}", redact(&err.to_string()));
     }
 }
 
