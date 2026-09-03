@@ -115,10 +115,24 @@ h2 {
   grid-template-columns: 1fr 1fr 1fr;
 }
 
-article {
+article,
+.stat-card {
   background: var(--fill);
   border-radius: 8px;
   padding: 6px 8px;
+}
+
+.stat-card {
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stat-card:hover,
+.stat-card[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .card-label {
@@ -129,7 +143,8 @@ article {
   letter-spacing: 0.06em;
 }
 
-article strong {
+article strong,
+.stat-card strong {
   display: block;
   margin-top: 2px;
   font-size: 12px;
@@ -307,5 +322,83 @@ footer {
 
 .hint {
   color: #636366;
+  font-size: 11px;
+}
+
+.queue-panel {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+  bottom: 40px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(22, 22, 24, 0.88);
+  border: 1px solid var(--line);
+}
+
+.queue-panel[hidden] {
+  display: none;
+}
+
+.queue-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.queue-panel-head h2 {
+  margin: 0;
+}
+
+.queue-panel-head p {
+  margin: 2px 0 0;
+  color: #8e8e93;
+  font-size: 11px;
+}
+
+.queue-panel-head button {
+  border: 0;
+  background: var(--fill);
+  color: inherit;
+  border-radius: 7px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.queue-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.queue-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.queue-list li:last-child {
+  border-bottom: 0;
+}
+
+.queue-item-event {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.queue-item-meta {
+  display: block;
+  margin-top: 1px;
+  color: #8e8e93;
   font-size: 11px;
 }

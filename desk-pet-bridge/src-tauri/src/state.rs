@@ -27,6 +27,7 @@ pub struct StatusSnapshot {
     pub ble: BlePhase,
     pub device: Option<String>,
     pub queue: usize,
+    pub queue_items: Vec<DeskPetEvent>,
     pub pairing_active: bool,
     pub last_event: Option<String>,
     pub last_error: Option<String>,
@@ -99,13 +100,17 @@ impl Shared {
 
     pub async fn snapshot(&self) -> StatusSnapshot {
         let inner = self.inner.lock().await;
-        let queue = self.outgoing.lock().await.len();
+        let outgoing = self.outgoing.lock().await;
+        let queue_items = outgoing.peek();
+        let queue = queue_items.len();
+        drop(outgoing);
         let loopback = self.loopback.lock().await;
         let port = loopback.port;
         StatusSnapshot {
             ble: inner.ble,
             device: inner.device.clone(),
             queue,
+            queue_items,
             pairing_active: inner.pairing_active,
             last_event: inner.last_event.clone(),
             last_error: inner.last_error.clone(),

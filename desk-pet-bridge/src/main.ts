@@ -4,10 +4,19 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type BlePhase = "disconnected" | "scanning" | "connected";
 
+type QueueEvent = {
+  id?: string | null;
+  event: string;
+  state?: string | null;
+  source?: string | null;
+  ts?: string | null;
+};
+
 type StatusSnapshot = {
   ble: BlePhase;
   device: string | null;
   queue: number;
+  queue_items?: QueueEvent[];
   pairing_active: boolean;
   last_event: string | null;
   last_error: string | null;
@@ -23,6 +32,8 @@ type StatusSnapshot = {
 
 let portHintOverride: string | null = null;
 let committedPort = 8765;
+let lastQueueJson = "";
+let pollTimer = 0;
 
 function setText(id: string, value: string) {
   const el = document.getElementById(id);
@@ -49,6 +60,74 @@ function clearPortOverride() {
   portHintOverride = null;
 }
 
+function isQueueOpen(): boolean {
+  const panel = document.getElementById("queue-panel");
+  return Boolean(panel && !panel.hasAttribute("hidden"));
+}
+
+function schedulePoll() {
+  window.clearTimeout(pollTimer);
+  pollTimer = window.setTimeout(() => {
+    void refresh().finally(() => {
+      schedulePoll();
+    });
+  }, isQueueOpen() ? 250 : 1000);
+}
+
+function setQueueOpen(open: boolean) {
+  const panel = document.getElementById("queue-panel");
+  const trigger = document.getElementById("open-queue");
+  panel?.toggleAttribute("hidden", !open);
+  trigger?.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    lastQueueJson = "";
+    void refresh();
+  }
+  schedulePoll();
+}
+
+function renderQueue(items: QueueEvent[]) {
+  if (!isQueueOpen()) {
+    return;
+  }
+  const encoded = JSON.stringify(items);
+  if (encoded === lastQueueJson) {
+    return;
+  }
+  lastQueueJson = encoded;
+
+  const list = document.getElementById("queue-list");
+  const sub = document.getElementById("queue-panel-sub");
+  if (!(list instanceof HTMLElement) || !sub) {
+    return;
+  }
+
+  list.replaceChildren();
+  if (items.length === 0) {
+    list.hidden = true;
+    sub.textContent = "No events waiting";
+    return;
+  }
+
+  list.hidden = false;
+  sub.textContent = items.length === 1 ? "1 event waiting" : `${items.length} events waiting`;
+
+  for (const item of items) {
+    const row = document.createElement("li");
+    const title = document.createElement("span");
+    title.className = "queue-item-event";
+    title.textContent = item.event;
+    const meta = document.createElement("span");
+    meta.className = "queue-item-meta";
+    const parts = [item.state, item.source, item.id].filter(
+      (part): part is string => typeof part === "string" && part.length > 0,
+    );
+    meta.textContent = parts.join(" · ") || "pending";
+    row.append(title, meta);
+    list.append(row);
+  }
+}
+
 function badgeFor(ble: BlePhase): { label: string; className: string } {
   switch (ble) {
     case "connected":
@@ -70,6 +149,7 @@ async function refresh() {
     const subtitle = status.device ?? "Waiting for device";
     setText("subtitle", subtitle);
     setText("queue", String(status.queue));
+    renderQueue(status.queue_items ?? []);
     setText("last-event", status.last_event ?? "—");
     setText("pet-mode", status.pet_mode ?? "—");
     setText("pet-state", status.pet_state ?? "—");
@@ -139,6 +219,12 @@ async function fitPopoverWindow() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  bind("open-queue", () => {
+    setQueueOpen(!isQueueOpen());
+  });
+  bind("close-queue", () => {
+    setQueueOpen(false);
+  });
   bind("reconnect", () => {
     void invoke("reconnect");
   });
@@ -234,11 +320,13 @@ window.addEventListener("DOMContentLoaded", () => {
     if (event.target === portInput) {
       return;
     }
+    if (isQueueOpen()) {
+      setQueueOpen(false);
+      return;
+    }
     void invoke("hide_status");
   });
 
   void refresh().then(() => fitPopoverWindow());
-  window.setInterval(() => {
-    void refresh();
-  }, 1000);
+  schedulePoll();
 });

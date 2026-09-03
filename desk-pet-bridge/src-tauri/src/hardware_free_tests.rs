@@ -135,6 +135,23 @@ async fn occupied_port_is_rejected_before_rebind() {
 }
 
 #[tokio::test]
+async fn snapshot_includes_queued_events_without_draining() {
+    let (tx, _rx) = mpsc::channel(8);
+    let shared = Shared::new(tx);
+    let mut first = DeskPetEvent::new("sessionStart").with_state("coding");
+    first.ensure_id();
+    let mut second = DeskPetEvent::new("stateUpdate").with_state("thinking");
+    second.ensure_id();
+    shared.enqueue(first.clone()).await;
+    shared.enqueue(second.clone()).await;
+    let snap = shared.snapshot().await;
+    assert_eq!(snap.queue, 2);
+    assert_eq!(snap.queue_items, vec![first.clone(), second.clone()]);
+    assert_eq!(shared.drain_queue().await, vec![first, second]);
+    assert_eq!(shared.snapshot().await.queue, 0);
+}
+
+#[tokio::test]
 async fn bind_preferred_moves_off_busy_port() {
     let held = TcpListener::bind("127.0.0.1:0")
         .await
