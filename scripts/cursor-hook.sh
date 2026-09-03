@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
-# Cursor hook → desk pet bridge (requires Tauri menu-bar app on 127.0.0.1:8765).
+# Cursor hook → desk pet bridge (requires Tauri menu-bar app on loopback).
 # Usage: cursor-hook.sh <hookName>   (stdin = Cursor hook JSON; not forwarded)
 set -euo pipefail
 
 HOOK_NAME="${1:-unknown}"
-BRIDGE_URL="${DESKPET_BRIDGE_URL:-http://127.0.0.1:8765/v1/cursor/event}"
+
+if [ -z "${DESKPET_BRIDGE_URL:-}" ]; then
+  PORT="${DESKPET_BRIDGE_PORT:-}"
+  SIDECAR="${HOME}/.deskpet-bridge.json"
+  if [ -z "$PORT" ] && [ -f "$SIDECAR" ] && command -v jq >/dev/null 2>&1; then
+    PORT="$(jq -r '.port // empty' "$SIDECAR" 2>/dev/null || true)"
+  fi
+  PORT="${PORT:-8765}"
+  BRIDGE_URL="http://127.0.0.1:${PORT}/v1/cursor/event"
+else
+  BRIDGE_URL="$DESKPET_BRIDGE_URL"
+fi
 
 case "$HOOK_NAME" in
   sessionStart)       EVENT="sessionStart"; STATE="coding" ;;

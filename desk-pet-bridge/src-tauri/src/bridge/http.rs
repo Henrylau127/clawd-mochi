@@ -5,16 +5,16 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::net::SocketAddr;
+use std::io::ErrorKind;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
+use super::loopback::{self, DEFAULT_PORT, HOST};
 use super::protocol::{parse_incoming, DeskPetEvent};
 use crate::cursor::events::map_incoming;
 use crate::diagnostics::redact;
 use crate::state::{BridgeCommand, Shared};
-
-const BIND: &str = "127.0.0.1:8765";
 
 #[derive(Clone)]
 struct HttpState {
@@ -32,21 +32,105 @@ pub fn router(shared: Arc<Shared>) -> Router {
         .with_state(HttpState { shared })
 }
 
+pub async fn bind_exact(port: u16) -> std::io::Result<TcpListener> {
+    TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await
+}
+
+pub async fn bind_preferred(port: u16) -> std::io::Result<(TcpListener, u16, bool)> {
+    let mut last_err: Option<std::io::Error> = None;
+    for offset in 0..16u16 {
+        let Some(candidate) = port.checked_add(offset) else {
+            break;
+        };
+        match bind_exact(candidate).await {
+            Ok(listener) => return Ok((listener, candidate, offset > 0)),
+            Err(err) if err.kind() == ErrorKind::AddrInUse => last_err = Some(err),
+            Err(err) => return Err(err),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        std::io::Error::new(ErrorKind::AddrInUse, "no free loopback port nearby")
+    }))
+}
+
 pub async fn serve(shared: Arc<Shared>) {
-    let addr: SocketAddr = BIND.parse().expect("static bind address");
-    match TcpListener::bind(addr).await {
-        Ok(listener) => serve_with_listener(shared, listener).await,
-        Err(err) => {
-            tracing::error!("failed to bind {BIND}: {}", redact(&err.to_string()));
+    let mut port_rx = shared.subscribe_port();
+    let mut allow_nearby = true;
+
+    loop {
+        let requested = *port_rx.borrow();
+        let bound = if allow_nearby {
+            allow_nearby = false;
+            bind_preferred(requested)
+                .await
+                .map(|(listener, actual, moved)| (listener, actual, moved))
+        } else {
+            bind_exact(requested)
+                .await
+                .map(|listener| (listener, requested, false))
+        };
+
+        match bound {
+            Ok((listener, actual, moved)) => {
+                let addr = listener
+                    .local_addr()
+                    .map(|socket| socket.to_string())
+                    .unwrap_or_else(|_| format!("{HOST}:{actual}"));
+                let note = if moved {
+                    Some(format!(
+                        "Port {requested} was in use. Listening on {actual}."
+                    ))
+                } else {
+                    None
+                };
+                shared
+                    .set_loopback(Some(addr.clone()), actual, None, note)
+                    .await;
+                let _ = loopback::save_port(actual);
+                tracing::info!("loopback API listening on http://{addr}");
+
+                let mut wait_change = port_rx.clone();
+                let shutdown = async move {
+                    let _ = wait_change.changed().await;
+                };
+                if let Err(err) = axum::serve(listener, router(shared.clone()))
+                    .with_graceful_shutdown(shutdown)
+                    .await
+                {
+                    tracing::error!("loopback API stopped: {}", redact(&err.to_string()));
+                    return;
+                }
+            }
+            Err(err) => {
+                let message = format!("Port {requested} is unavailable.");
+                tracing::error!(
+                    "failed to bind {HOST}:{requested}: {}",
+                    redact(&err.to_string())
+                );
+                shared
+                    .set_loopback(None, requested, Some(message), None)
+                    .await;
+                if port_rx.changed().await.is_err() {
+                    return;
+                }
+            }
         }
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn serve_with_listener(shared: Arc<Shared>, listener: TcpListener) {
     let addr = listener
         .local_addr()
         .map(|addr| addr.to_string())
-        .unwrap_or_else(|_| BIND.to_string());
+        .unwrap_or_else(|_| format!("{HOST}:{DEFAULT_PORT}"));
+    let port = listener
+        .local_addr()
+        .map(|addr: SocketAddr| addr.port())
+        .unwrap_or(DEFAULT_PORT);
+    shared
+        .set_loopback(Some(addr.clone()), port, None, None)
+        .await;
     tracing::info!("loopback API listening on http://{addr}");
     if let Err(err) = axum::serve(listener, router(shared)).await {
         tracing::error!("loopback API stopped: {}", redact(&err.to_string()));

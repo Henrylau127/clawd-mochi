@@ -15,20 +15,20 @@
       {
         "label": "main",
         "title": "Desk Pet Bridge",
-        "width": 340,
-        "height": 488,
+        "width": 320,
+        "height": 448,
         "visible": false,
         "skipTaskbar": true,
         "resizable": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
-        "shadow": false,
+        "shadow": true,
         "focus": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8765"
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:*"
     },
     "macOSPrivateApi": true
   },

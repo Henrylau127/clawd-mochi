@@ -1,6 +1,7 @@
 use serde::Serialize;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, watch, Mutex};
 
+use crate::bridge::loopback::{self, DEFAULT_PORT};
 use crate::bridge::protocol::DeskPetEvent;
 use crate::bridge::queue::EventQueue;
 
@@ -33,7 +34,21 @@ pub struct StatusSnapshot {
     pub pet_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pet_state: Option<String>,
+    pub loopback_host: String,
+    pub loopback_port: u16,
+    pub loopback_addr: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loopback_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loopback_note: Option<String>,
     pub ts: u64,
+}
+
+struct LoopbackStatus {
+    addr: Option<String>,
+    port: u16,
+    error: Option<String>,
+    note: Option<String>,
 }
 
 struct BridgeInner {
@@ -49,11 +64,16 @@ struct BridgeInner {
 pub struct Shared {
     inner: Mutex<BridgeInner>,
     outgoing: Mutex<EventQueue>,
+    loopback: Mutex<LoopbackStatus>,
+    port_tx: watch::Sender<u16>,
+    _port_rx: watch::Receiver<u16>,
     pub command_tx: mpsc::Sender<BridgeCommand>,
 }
 
 impl Shared {
     pub fn new(command_tx: mpsc::Sender<BridgeCommand>) -> Self {
+        let port = loopback::resolve_port();
+        let (port_tx, port_rx) = watch::channel(port);
         Self {
             inner: Mutex::new(BridgeInner {
                 ble: BlePhase::Disconnected,
@@ -65,6 +85,14 @@ impl Shared {
                 simulated_state: None,
             }),
             outgoing: Mutex::new(EventQueue::default()),
+            loopback: Mutex::new(LoopbackStatus {
+                addr: None,
+                port,
+                error: None,
+                note: None,
+            }),
+            port_tx,
+            _port_rx: port_rx,
             command_tx,
         }
     }
@@ -72,6 +100,8 @@ impl Shared {
     pub async fn snapshot(&self) -> StatusSnapshot {
         let inner = self.inner.lock().await;
         let queue = self.outgoing.lock().await.len();
+        let loopback = self.loopback.lock().await;
+        let port = loopback.port;
         StatusSnapshot {
             ble: inner.ble,
             device: inner.device.clone(),
@@ -81,6 +111,14 @@ impl Shared {
             last_error: inner.last_error.clone(),
             pet_mode: inner.simulated_mode.clone(),
             pet_state: inner.simulated_state.clone(),
+            loopback_host: loopback::HOST.to_string(),
+            loopback_port: port,
+            loopback_addr: loopback
+                .addr
+                .clone()
+                .unwrap_or_else(|| format!("{}:{port}", loopback::HOST)),
+            loopback_error: loopback.error.clone(),
+            loopback_note: loopback.note.clone(),
             ts: unix_secs(),
         }
     }
@@ -126,6 +164,30 @@ impl Shared {
 
     pub async fn drain_queue(&self) -> Vec<DeskPetEvent> {
         self.outgoing.lock().await.drain()
+    }
+
+    pub fn subscribe_port(&self) -> watch::Receiver<u16> {
+        self.port_tx.subscribe()
+    }
+
+    pub fn request_port(&self, port: u16) -> Result<u16, String> {
+        let port = loopback::validate_port(port)?;
+        self.port_tx.send(port).map_err(|err| err.to_string())?;
+        Ok(port)
+    }
+
+    pub async fn set_loopback(
+        &self,
+        addr: Option<String>,
+        port: u16,
+        error: Option<String>,
+        note: Option<String>,
+    ) {
+        let mut loopback = self.loopback.lock().await;
+        loopback.addr = addr;
+        loopback.port = if port == 0 { DEFAULT_PORT } else { port };
+        loopback.error = error;
+        loopback.note = note;
     }
 }
 

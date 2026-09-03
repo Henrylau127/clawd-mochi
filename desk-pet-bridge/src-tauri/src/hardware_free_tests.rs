@@ -61,6 +61,29 @@ async fn spawn_mock_bridge() -> (String, Arc<Shared>) {
     (base, shared)
 }
 
+#[tokio::test]
+async fn bind_exact_fails_when_port_in_use() {
+    let held = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("hold a loopback port");
+    let port = held.local_addr().expect("held addr").port();
+    let err = http::bind_exact(port).await.expect_err("port should be busy");
+    assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
+}
+
+#[tokio::test]
+async fn bind_preferred_moves_off_busy_port() {
+    let held = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("hold a loopback port");
+    let port = held.local_addr().expect("held addr").port();
+    let (_listener, actual, moved) = http::bind_preferred(port)
+        .await
+        .expect("nearby port should bind");
+    assert!(moved, "should skip the occupied port");
+    assert_ne!(actual, port);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn mock_status_is_connected_without_hardware() {
     let (base, _) = spawn_mock_bridge().await;

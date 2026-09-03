@@ -75,24 +75,31 @@
         </button>
       </section>
 
-      <section class="danger" id="forget-section">
-        <button id="forget" class="row-btn" type="button">
+      <section>
+        <h2>Loopback</h2>
+        <div class="port-row">
           <span>
-            <span class="row-title">Forget device</span>
-            <span class="row-sub">Erase bonds on the pet</span>
+            <span class="row-title">127.0.0.1</span>
+            <span id="loopback-hint" class="row-sub">Cursor hooks POST here</span>
           </span>
-        </button>
-        <div id="forget-confirm" class="confirm" hidden>
-          <p>Erase stored bonds? You will need to pair again.</p>
-          <div class="confirm-actions">
-            <button id="forget-no" type="button">Cancel</button>
-            <button id="forget-yes" class="destructive" type="button">Erase</button>
-          </div>
+          <label class="port-field">
+            <span>Port</span>
+            <input id="loopback-port" type="number" min="1024" max="65535" step="1" value="8765" />
+          </label>
+          <button id="apply-port" type="button">Apply</button>
         </div>
       </section>
 
+      <div id="forget-confirm" class="confirm" hidden>
+        <p>Erase stored bonds? You will need to pair again.</p>
+        <div class="confirm-actions">
+          <button id="forget-no" type="button">Cancel</button>
+          <button id="forget-yes" class="destructive" type="button">Erase</button>
+        </div>
+      </div>
+
       <footer>
-        <span class="hint">127.0.0.1:8765</span>
+        <button id="forget" type="button">Forget</button>
         <button id="quit" type="button">Quit</button>
       </footer>
     </div>

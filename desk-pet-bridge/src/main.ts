@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { LogicalSize } from "@tauri-apps/api/dpi";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type BlePhase = "disconnected" | "scanning" | "connected";
 
@@ -11,6 +13,11 @@ type StatusSnapshot = {
   last_error: string | null;
   pet_mode?: string | null;
   pet_state?: string | null;
+  loopback_host?: string;
+  loopback_port?: number;
+  loopback_addr?: string;
+  loopback_error?: string | null;
+  loopback_note?: string | null;
   ts: number;
 };
 
@@ -47,6 +54,20 @@ async function refresh() {
     setText("pet-state", status.pet_state ?? "—");
     setText("last-error", status.last_error ?? "none");
 
+    const hint = document.getElementById("loopback-hint");
+    if (hint) {
+      hint.classList.toggle("error", Boolean(status.loopback_error));
+      hint.textContent =
+        status.loopback_error ??
+        status.loopback_note ??
+        `Cursor hooks POST to ${status.loopback_addr ?? "127.0.0.1:8765"}`;
+    }
+
+    const portInput = document.getElementById("loopback-port");
+    if (portInput instanceof HTMLInputElement && document.activeElement !== portInput) {
+      portInput.value = String(status.loopback_port ?? 8765);
+    }
+
     const badge = document.getElementById("badge");
     if (badge) {
       const next = badgeFor(status.ble);
@@ -67,6 +88,27 @@ function bind(id: string, handler: () => void) {
   document.getElementById(id)?.addEventListener("click", handler);
 }
 
+async function fitPopoverWindow() {
+  const panel = document.querySelector(".popover");
+  if (!(panel instanceof HTMLElement)) {
+    return;
+  }
+
+  const bodyStyle = getComputedStyle(document.body);
+  const width = Math.ceil(
+    panel.offsetWidth + parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight),
+  );
+  const height = Math.ceil(
+    panel.offsetHeight + parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom),
+  );
+
+  try {
+    await getCurrentWindow().setSize(new LogicalSize(width, height));
+  } catch {
+    // Browser preview is not a Tauri window.
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   bind("reconnect", () => {
     void invoke("reconnect");
@@ -76,6 +118,33 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   bind("quit", () => {
     void invoke("quit");
+  });
+
+  const applyPort = () => {
+    const portInput = document.getElementById("loopback-port");
+    if (!(portInput instanceof HTMLInputElement)) {
+      return;
+    }
+    const port = Number.parseInt(portInput.value, 10);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      setText("loopback-hint", "Use a port from 1024 to 65535.");
+      document.getElementById("loopback-hint")?.classList.add("error");
+      return;
+    }
+    void invoke<number>("set_loopback_port", { port })
+      .then(() => refresh().then(() => fitPopoverWindow()))
+      .catch((err: unknown) => {
+        setText("loopback-hint", String(err));
+        document.getElementById("loopback-hint")?.classList.add("error");
+      });
+  };
+
+  bind("apply-port", applyPort);
+  document.getElementById("loopback-port")?.addEventListener("keydown", (event) => {
+    if (event instanceof KeyboardEvent && event.key === "Enter") {
+      event.preventDefault();
+      applyPort();
+    }
   });
 
   const pairing = document.getElementById("pairing-toggle");
@@ -104,7 +173,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  void refresh();
+  void refresh().then(() => fitPopoverWindow());
   window.setInterval(() => {
     void refresh();
   }, 1000);

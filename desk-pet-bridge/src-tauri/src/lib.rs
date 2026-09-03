@@ -2,6 +2,7 @@ mod ble;
 mod bridge;
 mod cursor;
 mod diagnostics;
+mod glass;
 mod state;
 mod tray;
 
@@ -66,6 +67,16 @@ async fn forget_device(shared: tauri::State<'_, Arc<Shared>>) -> Result<(), Stri
 }
 
 #[tauri::command]
+fn set_loopback_port(
+    shared: tauri::State<'_, Arc<Shared>>,
+    port: u16,
+) -> Result<u16, String> {
+    let port = shared.request_port(port)?;
+    crate::bridge::loopback::save_port(port)?;
+    Ok(port)
+}
+
+#[tauri::command]
 fn hide_status(window: tauri::WebviewWindow) -> Result<(), String> {
     window.hide().map_err(|err| err.to_string())
 }
@@ -95,6 +106,9 @@ pub fn run() {
             let shared = Arc::new(Shared::new(command_tx));
             app.manage(shared.clone());
             tray::setup(app.handle(), shared.clone())?;
+            if let Some(window) = app.get_webview_window("main") {
+                crate::glass::apply_menu_glass(&window);
+            }
 
             tauri::async_runtime::spawn(bridge::http::serve(shared.clone()));
             tauri::async_runtime::spawn(ble::client::run(shared, command_rx));
@@ -120,6 +134,7 @@ pub fn run() {
             stop_pairing,
             test_pet,
             forget_device,
+            set_loopback_port,
             hide_status,
             quit
         ])
