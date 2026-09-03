@@ -17,14 +17,14 @@ Agent expressions (blue coding eyes, yellow `><` thinking, etc.) appear only in 
 
 ## Does Cursor change the graphics?
 
-**Not yet.** Cursor hooks need this chain:
+**Not yet complete end-to-end.** Cursor hooks need this chain:
 
 ```text
 .cursor/hooks.json → scripts/cursor-hook.sh → Mac Tauri bridge (127.0.0.1:8765)
   → BLE → firmware → Face::drawExpression
 ```
 
-The **Tauri bridge is not built** (Linear HEN-11, deferred). Hooks will POST silently until the bridge exists.
+The Tauri bridge lives in `desk-pet-bridge/` (Linear HEN-11). Hooks POST to loopback and stay silent until the bridge is running. See [mac-validation.md](mac-validation.md).
 
 ### Test without Cursor
 

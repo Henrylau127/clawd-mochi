@@ -1,6 +1,6 @@
 # ESP32-C3 Desk Pet + Agent Status Display (v5)
 
-**Related docs:** [desk-pet-firmware-plan.md](desk-pet-firmware-plan.md) (implementation plan snapshot), [wsl-validation.md](wsl-validation.md) (WSL build/flash validation).
+**Related docs:** [desk-pet-firmware-plan.md](desk-pet-firmware-plan.md) (implementation plan snapshot), [wsl-validation.md](wsl-validation.md) (WSL build/flash validation), [mac-validation.md](mac-validation.md) (Mac toolchain + Tauri bridge).
 
 ## Product Overview
 

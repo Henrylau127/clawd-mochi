@@ -157,7 +157,7 @@ After each face draw, serial prints `[face] <expression>`.
 | 2 | WSL + usbipd | `STATUS` JSON + `TEST`/`PAIR`/`UNBOND`/`SLEEP`/`WAKE`/`HELP` work |
 | 3 | Phone | nRF Connect: `DP-<MAC>` advertise, pair, encrypted write, reboot reconnect |
 | 4 | Human | TFT expressions match state (manual) |
-| 5 | Mac | Tauri bridge E2E (deferred) |
+| 5 | Mac | Tauri bridge E2E (see [mac-validation.md](mac-validation.md)) |
 
 ### Validation log
 

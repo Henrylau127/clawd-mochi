@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Desk Pet Status</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Desk Pet Bridge</h1>
+      <dl>
+        <div><dt>BLE</dt><dd id="ble">disconnected</dd></div>
+        <div><dt>Device</dt><dd id="device">—</dd></div>
+        <div><dt>Queue</dt><dd id="queue">0</dd></div>
+        <div><dt>Pairing</dt><dd id="pairing">off</dd></div>
+        <div><dt>Last event</dt><dd id="last-event">—</dd></div>
+        <div><dt>Last error</dt><dd id="last-error">—</dd></div>
+      </dl>
+      <div class="actions">
+        <button id="reconnect" type="button">Reconnect</button>
+        <button id="start-pairing" type="button">Start pairing</button>
+        <button id="stop-pairing" type="button">Stop pairing</button>
+        <button id="test-pet" type="button">Test pet</button>
+        <button id="forget" type="button">Forget device</button>
+        <button id="hide" type="button">Hide</button>
+      </div>
+      <p class="hint">Loopback API: <code>127.0.0.1:8765</code></p>
+    </main>
+  </body>
+</html>

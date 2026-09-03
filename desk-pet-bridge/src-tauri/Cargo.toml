@@ -1,0 +1,29 @@
+[package]
+name = "desk-pet-bridge"
+version = "0.1.0"
+description = "Mac menu-bar BLE bridge for the ESP32 desk pet"
+authors = ["henrylau"]
+edition = "2021"
+
+[lib]
+name = "desk_pet_bridge_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync", "net"] }
+axum = "0.8"
+btleplug = "0.11"
+uuid = { version = "1", features = ["v4"] }
+futures = "0.3"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
