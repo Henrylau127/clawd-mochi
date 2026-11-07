@@ -147,6 +147,8 @@ function providerLabel(provider: string): string {
       return "Cursor";
     case "codex":
       return "Codex";
+    case "omp":
+      return "OMP";
     case "claude-code":
       return "Claude Code";
     case "pi":

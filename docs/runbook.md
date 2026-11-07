@@ -156,6 +156,29 @@ Thought → thinking; tool/edit hooks → coding. Reload Cursor hooks after chan
 
 Agent skill (optional): `~/.cursor/skills-cursor/desk-pet-cursor-hooks/SKILL.md`.
 
+### Codex hooks
+
+OpenAI Codex loads `.codex/hooks.json` when this project layer is trusted, and `~/.codex/hooks.json` for every session. This repo ships the project file. It runs `scripts/agent-hook.sh`, which posts to `POST /v1/codex/event`.
+
+1. Use a Codex build with hooks ([hook docs](https://learn.chatgpt.com/docs/hooks)). Leave `[features] hooks` at the default `true`.
+2. Review and trust the hook commands with `/hooks` (desktop: Settings → Hooks). Codex skips untrusted hooks.
+3. Start the bridge. Hooks stay silent if it is down.
+4. Start or resume a Codex session in this repo.
+
+Session start shows coding, model requests show thinking, tool use stays on coding, an approval prompt or finished turn shows waiting, a failed model request shows error, an interrupt shows idle, and session end returns to wander. The script reads only the `PostModelRequest` status enum from stdin. Prompts, paths, commands, and error text are discarded.
+
+For other repos, point `~/.codex/hooks.json` at this checkout's `scripts/agent-hook.sh` with the same arguments.
+
+### OMP hooks
+
+OMP here is the oh-my-pi CLI (`omp`, [hooks](https://omp.sh/docs/hooks)), not a separate OpenAI product. Codex is OpenAI's hookable agent. oh-my-pi discovers `.omp/hooks/post/desk-pet.js` and that file calls the same shell script with an event name plus `ok`, `error`, `done`, or `continue`.
+
+1. Run `omp` from this repo, or copy the module to `~/.omp/agent/hooks/post/` and set `DESKPET_HOOK_SCRIPT` to this repo's `scripts/agent-hook.sh`.
+2. Start a new omp session so discovery reloads.
+3. Start the bridge.
+
+`source` on the pet event is `omp`. Firmware ignores that key today. This adapter does not send caption or usage strings. Claude Code and upstream Pi stay disabled until they get their own mappers.
+
 ---
 
 ## Recovery sketch
