@@ -67,7 +67,7 @@ fi
 if command -v jq >/dev/null 2>&1; then
   ok "jq $(jq --version)"
 else
-  missing "jq (needed by scripts/cursor-hook.sh)"
+  missing "jq (needed by scripts/cursor-hook.sh and scripts/agent-hook.sh)"
 fi
 
 if xcode-select -p >/dev/null 2>&1; then

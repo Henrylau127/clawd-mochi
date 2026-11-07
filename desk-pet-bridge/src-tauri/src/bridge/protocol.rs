@@ -33,6 +33,14 @@ const ALLOWED_STATES: &[&str] = &[
 
 const ALLOWED_SECURITY_TYPES: &[&str] = &["ssh_login", "github_login", "deployment", "sudo"];
 
+pub(crate) fn is_allowed_event(event: &str) -> bool {
+    ALLOWED_EVENTS.contains(&event)
+}
+
+pub(crate) fn is_allowed_state(state: &str) -> bool {
+    ALLOWED_STATES.contains(&state)
+}
+
 #[derive(Debug, Error)]
 pub enum ProtocolError {
     #[error("malformed json")]
@@ -62,6 +70,10 @@ pub struct DeskPetEvent {
     pub event: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// Provider tag (`cursor`, `codex`, `omp`, `bridge`, or `test`).
+    /// Firmware ignores unknown keys, so a later face can read this without a
+    /// display change in the hook adapter. Caption and usage text are not
+    /// carried here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -109,7 +109,7 @@ another PIN.
 
 ## macOS Tauri bridge
 
-The [`desk-pet-bridge/`](desk-pet-bridge/) directory contains a Tauri v2 menu-bar app. It scans for `DP-*`, connects through macOS CoreBluetooth via `btleplug`, queues events while reconnecting, and forwards Cursor hooks from `.cursor/hooks.json`.
+The [`desk-pet-bridge/`](desk-pet-bridge/) directory contains a Tauri v2 menu-bar app. It scans for `DP-*`, connects through macOS CoreBluetooth via `btleplug`, queues events while reconnecting, and forwards Cursor hooks from `.cursor/hooks.json`. Codex hooks (`.codex/hooks.json`) and oh-my-pi OMP events (`.omp/hooks/post/desk-pet.js`) post beside Cursor. See the [runbook](docs/runbook.md) to enable them.
 
 Install and run it on macOS:
 
@@ -134,7 +134,7 @@ curl -s -X POST http://127.0.0.1:8765/v1/test \
   -d '{"state":"coding"}'
 ```
 
-It also supports `POST /v1/cursor/event`, `POST /v1/power`, `POST /v1/pairing/start`, and `POST /v1/pairing/stop`. Pairing endpoints provide enrollment guidance; they do not remotely authorize a new bond. The full API and bridge behavior are documented in [`desk-pet-bridge/README.md`](desk-pet-bridge/README.md).
+It also supports `POST /v1/cursor/event`, `POST /v1/codex/event`, `POST /v1/omp/event`, `POST /v1/power`, `POST /v1/pairing/start`, and `POST /v1/pairing/stop`. Pairing endpoints provide enrollment guidance; they do not remotely authorize a new bond. The full API and bridge behavior are documented in [`desk-pet-bridge/README.md`](desk-pet-bridge/README.md).
 
 Without hardware, run the in-process `DP-TEST` BLE mock:
 

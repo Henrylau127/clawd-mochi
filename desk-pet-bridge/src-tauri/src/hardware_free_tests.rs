@@ -1,5 +1,6 @@
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -450,4 +451,173 @@ async fn stale_status_updates_cannot_overwrite_a_new_session() {
             .await
     );
     assert_eq!(shared.snapshot().await.pet_mode, None);
+}
+
+fn agent_hook_script() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/agent-hook.sh")
+}
+
+fn dry_run_hook(provider: &str, hook: &str, extra: &[&str], stdin_json: &str) -> String {
+    let mut command = Command::new("bash");
+    command
+        .arg(agent_hook_script())
+        .arg(provider)
+        .arg(hook)
+        .args(extra)
+        .env("DESKPET_HOOK_DRY_RUN", "1")
+        .env_remove("DESKPET_BRIDGE_URL")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("spawn agent-hook.sh");
+    {
+        let mut stdin = child.stdin.take().expect("stdin");
+        stdin
+            .write_all(stdin_json.as_bytes())
+            .expect("write hook stdin");
+    }
+    let output = child.wait_with_output().expect("wait agent-hook.sh");
+    assert!(
+        output.status.success(),
+        "agent-hook.sh failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("utf8 dry-run payload")
+}
+
+#[test]
+fn agent_hook_dry_run_keeps_status_enum_and_drops_secrets() {
+    let secret = r#"{
+      "hook_event_name": "PostModelRequest",
+      "status": "failed",
+      "error": "API key sk-live-SECRET",
+      "prompt": "SECRET_PROMPT",
+      "cwd": "/Users/me/SECRET_PATH",
+      "transcript_path": "/tmp/SECRET_TRANSCRIPT.jsonl",
+      "tool_input": {"command": "SECRET_COMMAND"},
+      "last_assistant_message": "SECRET_REPLY"
+    }"#;
+    let payload = dry_run_hook("codex", "PostModelRequest", &[], secret);
+    let value: Value = serde_json::from_str(payload.trim()).expect("dry-run json");
+    assert_eq!(value["hook"], "PostModelRequest");
+    assert_eq!(value["source"], "codex");
+    assert_eq!(value["outcome"], "failed");
+    assert!(value.get("prompt").is_none());
+    assert!(!payload.contains("SECRET"));
+    assert!(!payload.contains("sk-live"));
+
+    let ignored = dry_run_hook("codex", "PreToolUse", &["SECRET_COMMAND"], "");
+    assert!(!ignored.contains("SECRET_COMMAND"));
+    assert!(ignored.contains("\"hook\":\"PreToolUse\""));
+
+    let dropped = dry_run_hook(
+        "codex",
+        "notARealHook",
+        &[],
+        r#"{"prompt":"SECRET_PROMPT"}"#,
+    );
+    assert!(dropped.is_empty(), "{dropped}");
+}
+
+#[test]
+fn omp_extension_forwards_labels_only() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let script = agent_hook_script();
+    let output = Command::new("node")
+        .current_dir(&repo)
+        .arg("--input-type=module")
+        .arg("-e")
+        .arg(
+            r#"
+import hook from "./.omp/hooks/post/desk-pet.js";
+const handlers = new Map();
+hook({ on(name, fn) { handlers.set(name, fn); } });
+const secret = {
+  prompt: "SECRET_PROMPT",
+  text: "SECRET_TEXT",
+  args: { command: "SECRET_CMD" },
+  messages: ["SECRET_MSG"],
+  cwd: "/secret/path",
+  isError: true,
+  willContinue: true,
+  error: "SECRET_ERR",
+  result: "SECRET_RESULT",
+};
+await handlers.get("before_agent_start")(secret, secret);
+await handlers.get("tool_execution_end")(secret, secret);
+await handlers.get("agent_end")(secret, secret);
+"#,
+        )
+        .env("DESKPET_HOOK_DRY_RUN", "1")
+        .env("DESKPET_HOOK_SCRIPT", &script)
+        .output()
+        .expect("node");
+    assert!(
+        output.status.success(),
+        "omp hook failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf8");
+    assert!(
+        stdout.contains("\"hook\":\"before_agent_start\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("\"hook\":\"tool_execution_end\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\"outcome\":\"error\""), "{stdout}");
+    assert!(stdout.contains("\"hook\":\"agent_end\""), "{stdout}");
+    assert!(stdout.contains("\"outcome\":\"continue\""), "{stdout}");
+    assert!(!stdout.contains("SECRET"), "{stdout}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn codex_and_omp_hooks_drive_simulated_pet() {
+    let (base, _) = spawn_mock_bridge().await;
+    let script = agent_hook_script();
+    let post = |provider: &str, hook: &str, outcome: Option<&str>| {
+        let url = format!("{base}/v1/{provider}/event");
+        let mut command = Command::new("bash");
+        command
+            .arg(&script)
+            .arg(provider)
+            .arg(hook)
+            .env("DESKPET_BRIDGE_URL", &url)
+            .stdin(Stdio::null());
+        if let Some(outcome) = outcome {
+            command.arg(outcome);
+        }
+        let status = command.status().expect("run agent-hook.sh");
+        assert!(status.success());
+    };
+
+    post("codex", "SessionStart", None);
+    post("codex", "PreToolUse", None);
+    post("codex", "Stop", None);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let snapshot = curl_json(&["-sS", &format!("{base}/v1/status")]);
+    assert_eq!(snapshot["last_event"], "stateUpdate");
+    assert_eq!(snapshot["pet_mode"], "agent");
+    assert_eq!(snapshot["pet_state"], "waiting_for_user");
+
+    post("codex", "SessionEnd", None);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let snapshot = curl_json(&["-sS", &format!("{base}/v1/status")]);
+    assert_eq!(snapshot["last_event"], "sessionEnd");
+    assert_eq!(snapshot["pet_mode"], "wander");
+    assert_eq!(snapshot["pet_state"], "idle");
+
+    post("omp", "session_start", None);
+    post("omp", "tool_execution_end", Some("error"));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let snapshot = curl_json(&["-sS", &format!("{base}/v1/status")]);
+    assert_eq!(snapshot["pet_mode"], "agent");
+    assert_eq!(snapshot["pet_state"], "error");
+
+    post("omp", "session_shutdown", None);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let snapshot = curl_json(&["-sS", &format!("{base}/v1/status")]);
+    assert_eq!(snapshot["last_event"], "sessionEnd");
+    assert_eq!(snapshot["pet_mode"], "wander");
 }

@@ -9,7 +9,7 @@ Tauri v2 menu-bar app that forwards Cursor agent events to the ESP32 desk pet ov
 - Scans for `DP-<MAC>` and the desk-pet GATT service.
 - Writes compact JSON to the encrypted Command RX (`7d3f1b2e-...d002`) using CoreBluetooth via `btleplug`.
 - Performs a secure GATT handshake before reporting the pet as connected; the first pairing can wait for the macOS passkey prompt.
-- Exposes a loopback HTTP API on `127.0.0.1:8765` for Cursor hooks.
+- Exposes a loopback HTTP API on `127.0.0.1:8765` for Cursor, Codex, and OMP hooks.
 - Queues events while BLE is reconnecting (max 64).
 - Never logs passkeys, tokens, or bond material.
 
@@ -47,6 +47,8 @@ Bound only to `127.0.0.1:8765`.
 | Method | Path | Body |
 |--------|------|------|
 | POST | `/v1/cursor/event` | Cursor hook or desk-pet JSON |
+| POST | `/v1/codex/event` | Codex hook name or desk-pet JSON |
+| POST | `/v1/omp/event` | OMP event name or desk-pet JSON |
 | POST | `/v1/test` | `{"state":"coding"}` |
 | GET | `/v1/status` | — |
 | POST | `/v1/power` | `{"action":"sleep"}` or `{"action":"wake"}` |
@@ -66,7 +68,7 @@ curl -s -X POST http://127.0.0.1:8765/v1/test -H 'Content-Type: application/json
 
 `state` may also be `celebrate` (`done` and `success` are accepted aliases). Agent events may include an optional allowlisted `caption` and `mood` (`happy`, `worried`, `startled`). Those fields are for the face; paths and commands are not forwarded. See [docs/scene-ui.md](../docs/scene-ui.md).
 
-Project Cursor hooks in `.cursor/hooks.json` POST through `scripts/cursor-hook.sh`. They stay silent if the bridge is not running.
+Project Cursor hooks in `.cursor/hooks.json` POST through `scripts/cursor-hook.sh`. Codex (`.codex/hooks.json`) and oh-my-pi OMP (`.omp/hooks/post/desk-pet.js`) POST through `scripts/agent-hook.sh` to their own routes. Hooks stay silent if the bridge is not running. Enablement steps are in [docs/runbook.md](../docs/runbook.md). The pet event `source` is `cursor`, `codex`, or `omp`. Codex and OMP adapters send states only. The Cursor mapper may add an allowlisted caption.
 
 ## Tests without hardware
 

@@ -88,7 +88,12 @@ mod tests {
 
     #[test]
     fn tool_and_edit_hooks_leave_thinking() {
-        for hook in ["preToolUse", "afterFileEdit", "beforeReadFile", "postToolUse"] {
+        for hook in [
+            "preToolUse",
+            "afterFileEdit",
+            "beforeReadFile",
+            "postToolUse",
+        ] {
             let mapped = map_incoming(json!({ "hook": hook })).unwrap();
             assert_eq!(mapped["event"], "stateUpdate", "{}", hook);
             assert_eq!(mapped["state"], "coding", "{}", hook);
@@ -106,6 +111,12 @@ mod tests {
     #[test]
     fn rejects_unknown_event_name() {
         assert!(map_incoming(json!({"event": "dropTable"})).is_err());
+    }
+
+    #[test]
+    fn leaves_codex_and_omp_hook_names_unmapped() {
+        assert!(map_incoming(json!({"hook": "SessionStart"})).is_err());
+        assert!(map_incoming(json!({"hook": "session_start"})).is_err());
     }
 
     #[test]
