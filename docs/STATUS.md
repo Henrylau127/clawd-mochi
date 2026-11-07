@@ -2,7 +2,7 @@
 
 Living checklist. Update this file in place; put dated narrative in [archive/](archive/) if needed.
 
-**Updated:** 2026-09-04  
+**Updated:** 2026-11-07  
 **Reference hardware:** ESP32-C3 Super Mini `30:ED:A0:65:CC:98` → `DP-CC98`, fw `0.2.2-mac2`  
 **Bridge:** often `http://127.0.0.1:6900` (`loopback_addr` in status)
 
@@ -38,6 +38,7 @@ Linear (Done): HEN-5, HEN-6, HEN-7, HEN-8, HEN-9, HEN-10, HEN-11.
 - BLE keepalive: encrypted status read every 30s when idle (prevents CoreBluetooth idle drop).
 - Tray green/yellow/red/grey dots + hover tooltips.
 - Cursor hooks: tool/edit → coding (no sticky thinking).
+- Codex (`.codex/hooks.json`) and oh-my-pi OMP (`.omp/hooks/post/desk-pet.js`) post the same states beside Cursor. BLE `source` is `codex` or `omp`. No caption or usage text is added.
 
 ### Firmware (reliability)
 - Supervision timeout: 6s during pairing, 20s once encrypted (was 4s on connect).
@@ -57,7 +58,7 @@ Linear (Done): HEN-5, HEN-6, HEN-7, HEN-8, HEN-9, HEN-10, HEN-11.
 - [ ] Tray dots on light vs dark menu bar (eyeball).
 - [ ] Optional: surface `last_error` more clearly in the popover when offline.
 - [ ] Optional: Mac sleep/wake → backlight if bridge exposes it.
-- [ ] Optional: other hook providers (Codex / Claude Code / Pi).
+- [ ] Optional: Claude Code and upstream Pi (`pi`) hook providers. Codex and OMP are in.
 - [ ] Optional: phone nRF Connect for Tier 3 nostalgia.
 
 ---

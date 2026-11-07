@@ -12,8 +12,10 @@ use tokio::net::TcpListener;
 
 use super::loopback::{self, DEFAULT_PORT, HOST};
 use super::protocol::{parse_incoming, DeskPetEvent};
+use crate::codex::events::map_incoming as map_codex;
 use crate::cursor::events::map_incoming;
 use crate::diagnostics::redact;
+use crate::omp::events::map_incoming as map_omp;
 use crate::state::{BridgeCommand, Shared};
 
 #[derive(Clone)]
@@ -24,6 +26,8 @@ struct HttpState {
 pub fn router(shared: Arc<Shared>) -> Router {
     Router::new()
         .route("/v1/cursor/event", post(cursor_event))
+        .route("/v1/codex/event", post(codex_event))
+        .route("/v1/omp/event", post(omp_event))
         .route("/v1/test", post(test_pet))
         .route("/v1/status", get(status))
         .route("/v1/power", post(power))
@@ -143,6 +147,20 @@ pub async fn serve_with_listener(shared: Arc<Shared>, listener: TcpListener) {
 
 async fn cursor_event(State(http): State<HttpState>, Json(body): Json<Value>) -> impl IntoResponse {
     match map_incoming(body).and_then(parse_incoming) {
+        Ok(event) => enqueue_or_send(&http.shared, event).await,
+        Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
+    }
+}
+
+async fn codex_event(State(http): State<HttpState>, Json(body): Json<Value>) -> impl IntoResponse {
+    match map_codex(body).and_then(parse_incoming) {
+        Ok(event) => enqueue_or_send(&http.shared, event).await,
+        Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
+    }
+}
+
+async fn omp_event(State(http): State<HttpState>, Json(body): Json<Value>) -> impl IntoResponse {
+    match map_omp(body).and_then(parse_incoming) {
         Ok(event) => enqueue_or_send(&http.shared, event).await,
         Err(err) => json_error(StatusCode::BAD_REQUEST, &err.to_string()),
     }

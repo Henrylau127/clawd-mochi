@@ -5,11 +5,12 @@ Living design notes for the BLE-first firmware and macOS bridge. Product intent 
 ## System overview
 
 ```text
-Cursor hooks → desk-pet-bridge (menu bar + loopback HTTP)
-                 │ encrypted GATT Command RX
-                 ▼
+Cursor hooks ──┐
+Codex hooks  ──┼→ desk-pet-bridge (menu bar + loopback HTTP)
+OMP events   ──┘    │ encrypted GATT Command RX
+                    ▼
             ESP32-C3 firmware ──► ST7789 face / wander / overlays
-                 ▲
+                    ▲
             USB serial STATUS / TEST / PAIR (recovery + agents)
 ```
 
@@ -38,7 +39,7 @@ Wander is intentional; it is not the original orange Wi-Fi Mochi controller UI. 
 ## Bridge
 
 - Tauri v2 **Accessory** menu-bar app (`desk-pet-bridge/`); no Dock icon by design.
-- CoreBluetooth via `btleplug`; loopback HTTP for Cursor hooks (port from Settings / `loopback_addr`, often `6900`).
+- CoreBluetooth via `btleplug`; loopback HTTP for agent hooks (port from Settings / `loopback_addr`, often `6900`).
 - Secure session: encrypted status read + status subscription before `secure_session: ready`.
 - Auto-reconnect on the active roster pet. Do not put a short unconditional sleep in the same `tokio::select!` as the reconnect timer (it cancels reconnect).
 - Tray icon: corner status dot (green / yellow / red / grey) + hover tooltip.
@@ -53,6 +54,21 @@ Wander is intentional; it is not the original orange Wi-Fi Mochi controller UI. 
 - Thought hooks → thinking; tool/edit hooks (`preToolUse`, `postToolUse`, `afterFileEdit`, …) → **coding** so the face does not stick on thinking during edits.
 - Hooks are silent if the bridge is not running.
 
+## Codex and OMP hooks
+
+Cursor stays on `POST /v1/cursor/event`. Codex and OMP use their own routes and do not replace it.
+
+```text
+.codex/hooks.json → scripts/agent-hook.sh codex <Event> → POST /v1/codex/event
+.omp/hooks/post/desk-pet.js → scripts/agent-hook.sh omp <event> → POST /v1/omp/event
+```
+
+Codex is OpenAI's agent CLI/app. Its command hooks are documented at <https://learn.chatgpt.com/docs/hooks>. OMP in this repo is the oh-my-pi CLI (`omp`, <https://omp.sh/docs/hooks>). That CLI has a documented extension event API, so the desk pet listens to it. OpenAI does not publish a second product named OMP; Codex is the OpenAI hook surface. Upstream Pi and Claude Code stay unwired.
+
+Mapped states: session start → coding, model or prompt start → thinking, tool use → coding, approval or turn end → `waiting_for_user`, model or tool failure → error, interrupt → idle, session end → wander. `source` on the BLE JSON is `codex` or `omp`. Firmware ignores that key today. Hook adapters do not send caption or usage text.
+
+The shell script discards Codex stdin except a `PostModelRequest` status of `completed`, `failed`, or `cancelled`. The OMP module passes an allowlisted outcome (`ok`, `error`, `done`, `continue`) and does not forward prompts, paths, or commands.
+
 ## Key source trees
 
 | Area | Path |
@@ -63,6 +79,7 @@ Wander is intentional; it is not the original orange Wi-Fi Mochi controller UI. 
 | Protocol / serial | `src/utils/` |
 | Bridge BLE client | `desk-pet-bridge/src-tauri/src/ble/` |
 | Bridge tray | `desk-pet-bridge/src-tauri/src/tray.rs` |
+| Cursor / Codex / OMP mappers | `desk-pet-bridge/src-tauri/src/cursor/`, `codex/`, `omp/` |
 
 ## Historical plan
 

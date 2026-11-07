@@ -12,7 +12,7 @@ pub const MIN_PORT: u16 = 1;
 pub const MAX_PORT: u16 = u16::MAX;
 pub const DEFAULT_PROVIDER: &str = "cursor";
 
-const ALLOWED_PROVIDERS: &[&str] = &["cursor"];
+const ALLOWED_PROVIDERS: &[&str] = &["cursor", "codex", "omp"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KnownPet {
@@ -48,7 +48,7 @@ pub fn validate_provider(provider: &str) -> Result<String, String> {
     if ALLOWED_PROVIDERS.contains(&provider) {
         return Ok(provider.to_string());
     }
-    Err("Only Cursor hooks are supported right now.".to_string())
+    Err("Provider must be cursor, codex, or omp.".to_string())
 }
 
 pub fn port_is_occupied(port: u16) -> bool {
@@ -154,12 +154,20 @@ fn write_sidecar(port: u16, provider: String, roster: PetRoster) -> Result<(), S
     let body = json!({
         "host": HOST,
         "port": port,
-        "url": format!("http://{HOST}:{port}/v1/cursor/event"),
+        "url": format!("http://{HOST}:{port}{}", event_path(&provider)),
         "provider": provider,
         "active_pet_id": roster.active_pet_id,
         "pets": roster.pets,
     });
     fs::write(sidecar_path(), format!("{body}\n")).map_err(|err| err.to_string())
+}
+
+fn event_path(provider: &str) -> &'static str {
+    match provider {
+        "codex" => "/v1/codex/event",
+        "omp" => "/v1/omp/event",
+        _ => "/v1/cursor/event",
+    }
 }
 
 fn home_dir() -> PathBuf {
@@ -184,9 +192,10 @@ mod tests {
     }
 
     #[test]
-    fn accepts_cursor_provider_only() {
+    fn accepts_cursor_codex_and_omp_providers() {
         assert_eq!(super::validate_provider("cursor").unwrap(), "cursor");
-        assert!(super::validate_provider("codex").is_err());
+        assert_eq!(super::validate_provider("codex").unwrap(), "codex");
+        assert_eq!(super::validate_provider("omp").unwrap(), "omp");
         assert!(super::validate_provider("claude-code").is_err());
         assert!(super::validate_provider("pi").is_err());
     }

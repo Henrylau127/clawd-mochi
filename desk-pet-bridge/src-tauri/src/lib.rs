@@ -1,8 +1,11 @@
 mod ble;
 mod bridge;
+mod codex;
 mod cursor;
 mod diagnostics;
 mod glass;
+mod omp;
+mod providers;
 mod state;
 mod tray;
 
