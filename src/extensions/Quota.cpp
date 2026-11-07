@@ -1,14 +1,29 @@
 #include "Quota.h"
 
+#include <Arduino.h>
+#include <stdio.h>
+
 #include "../clawd_mochi_base/Display.h"
 #include "../clawd_mochi_base/States.h"
 
 namespace {
 
-constexpr int16_t kBarX = 20;
-constexpr int16_t kBarY = 220;
-constexpr int16_t kBarW = 200;
-constexpr int16_t kBarH = 10;
+constexpr int16_t kRingCx = 214;
+constexpr int16_t kRingCy = 22;
+
+// 24 points, clockwise from the top.
+constexpr int8_t kRing[24][2] = {
+    {0, -14},  {4, -14},  {7, -12},   {10, -10}, {12, -7},  {14, -4},  {14, 0},   {14, 4},
+    {12, 7},   {10, 10},  {7, 12},    {4, 13},   {0, 14},   {-4, 13},  {-7, 12},  {-10, 10},
+    {-12, 7},  {-14, 4},  {-14, 0},   {-14, -4}, {-12, -7}, {-10, -10}, {-7, -12}, {-4, -13},
+};
+
+void drawRing(Adafruit_ST7789& tft, uint8_t points, uint16_t color) {
+  const uint8_t count = points > 24 ? 24 : points;
+  for (uint8_t i = 0; i < count; i++) {
+    tft.fillCircle(kRingCx + kRing[i][0], kRingCy + kRing[i][1], 2, color);
+  }
+}
 
 }  // namespace
 
@@ -41,12 +56,20 @@ void Quota::drawBar() {
     return;
   }
   Adafruit_ST7789& tft = display_.tft();
-  tft.fillRect(kBarX, kBarY, kBarW, kBarH, display_.colorDarkBg());
-  const int16_t fillW = static_cast<int16_t>((kBarW * state_.quotaPercent) / 100);
-  if (fillW > 0) {
-    tft.fillRect(kBarX, kBarY, fillW, kBarH, barColor(display_, state_.quotaPercent));
+  tft.fillRect(156, 2, 80, 40, display_.animBgColor());
+  drawRing(tft, 24, display_.colorDarkBg());
+  const uint8_t lit =
+      state_.quotaPercent >= 100 ? 24 : static_cast<uint8_t>((state_.quotaPercent * 24) / 100);
+  if (lit > 0) {
+    drawRing(tft, lit, barColor(display_, state_.quotaPercent));
   }
-  tft.drawRect(kBarX, kBarY, kBarW, kBarH, Display::kWhite);
+  tft.fillRoundRect(158, 12, 40, 16, 4, Display::kWhite);
+  tft.setTextColor(Display::kBlack);
+  tft.setTextSize(1);
+  char label[8] = {};
+  snprintf(label, sizeof(label), "%u%%", static_cast<unsigned>(state_.quotaPercent));
+  tft.setCursor(164, 16);
+  tft.print(label);
 }
 
 void Quota::tick() {

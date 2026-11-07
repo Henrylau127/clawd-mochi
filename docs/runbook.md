@@ -82,7 +82,7 @@ ls /dev/cu.usb*
 | Command | Behavior |
 |---------|----------|
 | `STATUS` | One-line JSON (`mode`, `state`, `expression`, `fw`, `secure_session`, …) |
-| `TEST coding\|thinking\|idle\|waiting\|error\|security` | Force agent expression |
+| `TEST coding\|thinking\|idle\|waiting\|error\|security\|celebrate` | Force agent expression (celebrate shows the done face and a caption) |
 | `WANDER` | Leave AGENT; redraw wander |
 | `PAIR` / `UNBOND` | Pairing window / clear bonds |
 | `SLEEP` / `WAKE` | Sleep backlight; wake only from SLEEP |

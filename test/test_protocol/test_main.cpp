@@ -203,6 +203,61 @@ static void test_pairing_json_events() {
   TEST_ASSERT_FALSE(sm.pairingActive);
 }
 
+static void test_caption_mood_and_celebrate() {
+  PetStateMachine sm;
+  const char* start =
+      "{\"event\":\"sessionStart\",\"state\":\"coding\",\"caption\":\"waking up\",\"mood\":\"happy\"}";
+  JsonParseResult parsed = JsonProtocol::parseCommand(start, strlen(start));
+  TEST_ASSERT_TRUE(parsed.ok);
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, parsed));
+  TEST_ASSERT_EQUAL_STRING("waking up", sm.caption);
+  TEST_ASSERT_EQUAL_STRING("happy", sm.mood);
+
+  const char* edit = "{\"event\":\"stateUpdate\",\"state\":\"coding\",\"caption\":\"editing\"}";
+  parsed = JsonProtocol::parseCommand(edit, strlen(edit));
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, parsed));
+  TEST_ASSERT_EQUAL_STRING("editing", sm.caption);
+  TEST_ASSERT_EQUAL_STRING("", sm.mood);
+
+  const char* leaked =
+      "{\"event\":\"stateUpdate\",\"state\":\"coding\",\"caption\":\"git status /tmp/secret\"}";
+  parsed = JsonProtocol::parseCommand(leaked, strlen(leaked));
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, parsed));
+  TEST_ASSERT_EQUAL(static_cast<int>(AgentExpression::CODING), static_cast<int>(sm.expression));
+  TEST_ASSERT_EQUAL_STRING("working", sm.caption);
+
+  const char* done = "{\"event\":\"stateUpdate\",\"state\":\"done\",\"caption\":\"committed\"}";
+  parsed = JsonProtocol::parseCommand(done, strlen(done));
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, parsed));
+  TEST_ASSERT_EQUAL(static_cast<int>(AgentExpression::CELEBRATE), static_cast<int>(sm.expression));
+  TEST_ASSERT_EQUAL_STRING("committed", sm.caption);
+
+  const char* failed =
+      "{\"event\":\"stateUpdate\",\"state\":\"error\",\"caption\":\"something failed\"}";
+  parsed = JsonProtocol::parseCommand(failed, strlen(failed));
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, parsed));
+  TEST_ASSERT_EQUAL_STRING("something failed", sm.caption);
+
+  char status[JsonProtocol::kStatusJsonCapacity] = {};
+  const size_t n = JsonProtocol::buildStatusJson(sm, status, sizeof(status));
+  TEST_ASSERT_GREATER_THAN(0, n);
+  TEST_ASSERT_TRUE(n < sizeof(status) - 1);
+  TEST_ASSERT_NOT_NULL(strstr(status, "\"caption\":\"something failed\""));
+  TEST_ASSERT_NOT_NULL(strstr(status, "\"state\":\"error\""));
+
+  const char* badMood = "{\"event\":\"stateUpdate\",\"state\":\"thinking\",\"mood\":\"sudo\"}";
+  parsed = JsonProtocol::parseCommand(badMood, strlen(badMood));
+  TEST_ASSERT_EQUAL(TransitionResult::OK, JsonProtocol::applyEvent(sm, parsed));
+  TEST_ASSERT_EQUAL_STRING("", sm.mood);
+  TEST_ASSERT_EQUAL_STRING("thinking", sm.caption);
+
+  sm.setMood("worried");
+  TEST_ASSERT_EQUAL(TransitionResult::OK, sm.onSessionEnd());
+  TEST_ASSERT_EQUAL_STRING("", sm.caption);
+  TEST_ASSERT_EQUAL_STRING("", sm.mood);
+  TEST_ASSERT_EQUAL(static_cast<int>(PetMode::WANDER), static_cast<int>(sm.mode));
+}
+
 static void test_sleep_wake_json_events() {
   PetStateMachine sm;
   const char* sleepJson = "{\"id\":\"s1\",\"event\":\"sleep\"}";
@@ -268,6 +323,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_status_json_fields);
   RUN_TEST(test_ack_error_shape);
   RUN_TEST(test_pairing_json_events);
+  RUN_TEST(test_caption_mood_and_celebrate);
   RUN_TEST(test_sleep_wake_json_events);
   RUN_TEST(test_pairing_window_rejects_new_central_when_closed);
   RUN_TEST(test_pairing_window_allows_new_central_until_expiry);

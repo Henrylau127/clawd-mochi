@@ -36,6 +36,8 @@ const char* PetStateMachine::expressionName(AgentExpression expr) {
       return "error";
     case AgentExpression::SECURITY:
       return "security";
+    case AgentExpression::CELEBRATE:
+      return "celebrate";
   }
   return "unknown";
 }
@@ -68,7 +70,31 @@ bool PetStateMachine::parseExpression(const char* name, AgentExpression& out) {
     out = AgentExpression::SECURITY;
     return true;
   }
+  if (streq(name, "celebrate") || streq(name, "done") || streq(name, "success")) {
+    out = AgentExpression::CELEBRATE;
+    return true;
+  }
   return false;
+}
+
+const char* defaultCaptionFor(AgentExpression expr) {
+  switch (expr) {
+    case AgentExpression::CODING:
+      return "working";
+    case AgentExpression::THINKING:
+      return "thinking";
+    case AgentExpression::IDLE:
+      return "idle";
+    case AgentExpression::WAITING:
+      return "waiting for you";
+    case AgentExpression::ERROR:
+      return "something failed";
+    case AgentExpression::CELEBRATE:
+      return "nice work";
+    case AgentExpression::SECURITY:
+      return "";
+  }
+  return "";
 }
 
 const char* PetStateMachine::attentionLevelName(AttentionLevel level) {
@@ -97,6 +123,8 @@ TransitionResult PetStateMachine::onSessionStart(const char* state) {
   attentionLevel = AttentionLevel::NONE;
   mode = PetMode::AGENT;
   expression = parsed;
+  setDefaultCaption();
+  clearMood();
   return TransitionResult::OK;
 }
 
@@ -108,6 +136,8 @@ TransitionResult PetStateMachine::onSessionEnd() {
   attentionLevel = AttentionLevel::NONE;
   mode = PetMode::WANDER;
   expression = AgentExpression::IDLE;
+  clearCaption();
+  clearMood();
   return TransitionResult::OK;
 }
 
@@ -121,6 +151,8 @@ TransitionResult PetStateMachine::onBleDisconnect() {
   securityOverlayActive = false;
   quotaVisible = false;
   securityTypeLabel[0] = '\0';
+  clearCaption();
+  clearMood();
   mode = PetMode::WANDER;
   expression = AgentExpression::IDLE;
   return hadAgentSession ? TransitionResult::OK : TransitionResult::IGNORED;
@@ -141,6 +173,8 @@ TransitionResult PetStateMachine::onStateUpdate(const char* state) {
 TransitionResult PetStateMachine::onSleep() {
   mode = PetMode::SLEEP;
   backlightPercent = 0;
+  clearCaption();
+  clearMood();
   return TransitionResult::OK;
 }
 
@@ -164,6 +198,8 @@ TransitionResult PetStateMachine::onTestExpression(const char* expr) {
   }
   mode = PetMode::AGENT;
   expression = parsed;
+  setDefaultCaption();
+  clearMood();
   return TransitionResult::OK;
 }
 
@@ -210,4 +246,26 @@ TransitionResult PetStateMachine::onQuotaUpdate(uint8_t percent) {
   quotaPercent = percent > 100 ? 100 : percent;
   quotaVisible = true;
   return TransitionResult::OK;
+}
+
+void PetStateMachine::clearCaption() { caption[0] = '\0'; }
+
+void PetStateMachine::setCaption(const char* text) {
+  if (text == nullptr || text[0] == '\0') {
+    clearCaption();
+    return;
+  }
+  strlcpy(caption, text, sizeof(caption));
+}
+
+void PetStateMachine::setDefaultCaption() { setCaption(defaultCaptionFor(expression)); }
+
+void PetStateMachine::clearMood() { mood[0] = '\0'; }
+
+void PetStateMachine::setMood(const char* text) {
+  if (text == nullptr || text[0] == '\0') {
+    clearMood();
+    return;
+  }
+  strlcpy(mood, text, sizeof(mood));
 }

@@ -1,5 +1,6 @@
 #include "JsonProtocol.h"
 
+#include "Caption.h"
 #include "Config.h"
 #include <ArduinoJson.h>
 #include <string.h>
@@ -15,6 +16,40 @@ void (*gOnQuotaUpdate)(uint8_t) = nullptr;
 void (*gOnPairingStart)() = nullptr;
 void (*gOnPairingStop)() = nullptr;
 void (*gOnUnbond)() = nullptr;
+
+void applyCaption(PetStateMachine& sm, const JsonParseResult& parsed, bool defaultIfAbsent) {
+  if (!parsed.hasCaption) {
+    if (defaultIfAbsent) {
+      sm.setDefaultCaption();
+    }
+    return;
+  }
+  if (parsed.caption[0] == '\0') {
+    sm.clearCaption();
+    return;
+  }
+  char cleaned[PetStateMachine::kCaptionCapacity] = {};
+  if (sanitizeCaption(parsed.caption, cleaned, sizeof(cleaned)) && cleaned[0] != '\0') {
+    sm.setCaption(cleaned);
+    return;
+  }
+  if (defaultIfAbsent) {
+    sm.setDefaultCaption();
+  }
+}
+
+void applyMood(PetStateMachine& sm, const JsonParseResult& parsed) {
+  if (!parsed.hasMood || parsed.mood[0] == '\0') {
+    sm.clearMood();
+    return;
+  }
+  char cleaned[PetStateMachine::kMoodCapacity] = {};
+  if (sanitizeMood(parsed.mood, cleaned, sizeof(cleaned)) && cleaned[0] != '\0') {
+    sm.setMood(cleaned);
+    return;
+  }
+  sm.clearMood();
+}
 
 }  // namespace
 
@@ -77,6 +112,14 @@ JsonParseResult JsonProtocol::parseCommand(const char* json, size_t len) {
       strlcpy(result.detailType, details["type"], sizeof(result.detailType));
     }
   }
+  if (doc["caption"].is<const char*>()) {
+    result.hasCaption = true;
+    strlcpy(result.caption, doc["caption"], sizeof(result.caption));
+  }
+  if (doc["mood"].is<const char*>()) {
+    result.hasMood = true;
+    strlcpy(result.mood, doc["mood"], sizeof(result.mood));
+  }
 
   if (result.event[0] == '\0' && result.state[0] == '\0' && result.quotaPercent < 0) {
     result.error = "missing event/state";
@@ -95,8 +138,12 @@ TransitionResult JsonProtocol::applyEvent(PetStateMachine& sm, const JsonParseRe
   if (strcmp(parsed.event, "sessionStart") == 0) {
     const char* state = parsed.state[0] != '\0' ? parsed.state : "coding";
     const TransitionResult tr = sm.onSessionStart(state);
-    if (tr == TransitionResult::OK && gOnSessionStart != nullptr) {
-      gOnSessionStart();
+    if (tr == TransitionResult::OK) {
+      applyCaption(sm, parsed, false);
+      applyMood(sm, parsed);
+      if (gOnSessionStart != nullptr) {
+        gOnSessionStart();
+      }
     }
     return tr;
   }
@@ -111,7 +158,12 @@ TransitionResult JsonProtocol::applyEvent(PetStateMachine& sm, const JsonParseRe
     if (parsed.state[0] == '\0') {
       return TransitionResult::INVALID;
     }
-    return sm.onStateUpdate(parsed.state);
+    const TransitionResult tr = sm.onStateUpdate(parsed.state);
+    if (tr == TransitionResult::OK) {
+      applyCaption(sm, parsed, true);
+      applyMood(sm, parsed);
+    }
+    return tr;
   }
   if (strcmp(parsed.event, "sleep") == 0) {
     return sm.onSleep();
@@ -193,6 +245,12 @@ size_t JsonProtocol::buildStatusJson(const PetStateMachine& sm, char* out, size_
   doc["quota_visible"] = sm.quotaVisible;
   doc["security_overlay"] = sm.securityOverlayActive;
   doc["fw"] = DESKPET_FW_VERSION;
+  if (sm.caption[0] != '\0') {
+    doc["caption"] = sm.caption;
+  }
+  if (sm.mood[0] != '\0') {
+    doc["mood"] = sm.mood;
+  }
 
   if (out == nullptr || outLen < 2) {
     return 0;

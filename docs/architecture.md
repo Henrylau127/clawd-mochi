@@ -21,7 +21,7 @@ Cursor hooks → desk-pet-bridge (menu bar + loopback HTTP)
 | Mode | Behavior |
 |------|----------|
 | `WANDER` | Local idle / ambient screens (~15s cycle) while disconnected or session ended |
-| `AGENT` | Coding / thinking / idle / waiting / error (+ attention / security overlays) |
+| `AGENT` | Coding / thinking / idle / waiting / error / celebrate (+ caption, mood, attention / security overlays) |
 | `SLEEP` | Backlight off |
 
 Wander is intentional; it is not the original orange Wi-Fi Mochi controller UI. Agent expressions appear only in `AGENT` mode.
@@ -52,6 +52,7 @@ Wander is intentional; it is not the original orange Wi-Fi Mochi controller UI. 
 
 - Thought hooks → thinking; tool/edit hooks (`preToolUse`, `postToolUse`, `afterFileEdit`, …) → **coding** so the face does not stick on thinking during edits.
 - Hooks are silent if the bridge is not running.
+- The bridge may add an optional `caption` and `mood` to `sessionStart` / `stateUpdate`. Captions are short allowlisted labels. `celebrate` is an extra expression for a finished commit or test when the payload includes `scene` or a `command` (the command is not written to the pet). See [scene-ui.md](scene-ui.md).
 
 ## Key source trees
 

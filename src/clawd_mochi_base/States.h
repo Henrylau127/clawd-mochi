@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 enum class PetMode : uint8_t {
@@ -15,6 +16,7 @@ enum class AgentExpression : uint8_t {
   WAITING,
   ERROR,
   SECURITY,
+  CELEBRATE,
 };
 
 enum class TransitionResult : uint8_t {
@@ -42,6 +44,10 @@ struct PetStateMachine {
   uint8_t backlightPercent = 100;
   uint8_t quotaPercent = 0;
   char securityTypeLabel[24] = {};
+  static constexpr size_t kCaptionCapacity = 17;
+  static constexpr size_t kMoodCapacity = 12;
+  char caption[kCaptionCapacity] = {};
+  char mood[kMoodCapacity] = {};
 
   TransitionResult onSessionStart(const char* state);
   TransitionResult onSessionEnd();
@@ -57,6 +63,11 @@ struct PetStateMachine {
   TransitionResult onAttentionCleared();
   TransitionResult onSecurityEvent(const char* typeLabel);
   TransitionResult onQuotaUpdate(uint8_t percent);
+  void clearCaption();
+  void setCaption(const char* text);
+  void setDefaultCaption();
+  void clearMood();
+  void setMood(const char* text);
 
   static const char* attentionLevelName(AttentionLevel level);
 

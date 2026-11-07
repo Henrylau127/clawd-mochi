@@ -2,8 +2,8 @@
 
 Living checklist. Update this file in place; put dated narrative in [archive/](archive/) if needed.
 
-**Updated:** 2026-09-04  
-**Reference hardware:** ESP32-C3 Super Mini `30:ED:A0:65:CC:98` → `DP-CC98`, fw `0.2.2-mac2`  
+**Updated:** 2026-11-07  
+**Reference hardware:** ESP32-C3 Super Mini `30:ED:A0:65:CC:98` → `DP-CC98`, fw `0.2.2-mac2` (tree adds `0.2.3-scenes`; flash to see the new faces)  
 **Bridge:** often `http://127.0.0.1:6900` (`loopback_addr` in status)
 
 ---
@@ -29,6 +29,7 @@ Linear (Done): HEN-5, HEN-6, HEN-7, HEN-8, HEN-9, HEN-10, HEN-11.
 - BLE-first stack, pairing window, LE SC bonding, secure session for bridge handshake.
 - Pairing-race fix: keep link during pairing; no wander over passkey UI; STATUS JSON capacity 512.
 - Wander / attention / quota / security / backlight extensions.
+- Scene ticker, celebrate face, wake smile, and a corner quota ring (`0.2.3-scenes`). Optional `caption` and `mood` on the existing BLE JSON. How to try it: [scene-ui.md](scene-ui.md).
 
 ### Bridge
 - Menu-bar popover, loopback API, roster, mock `DP-TEST`, secure GATT handshake.

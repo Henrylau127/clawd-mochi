@@ -166,7 +166,13 @@ fn validate_status_fields(mode: Option<&str>, state: Option<&str>) -> Result<(),
     if !matches!(mode, "wander" | "agent" | "sleep")
         || !matches!(
             state,
-            "idle" | "coding" | "thinking" | "waiting_for_user" | "error" | "security"
+            "idle"
+                | "coding"
+                | "thinking"
+                | "waiting_for_user"
+                | "error"
+                | "security"
+                | "celebrate"
         )
     {
         return Err(SessionError::InvalidFirmwareStatusValue);
@@ -278,6 +284,18 @@ mod tests {
             parse_notification(br#"{"ok":true}"#),
             Err(SessionError::MissingFirmwareStatusFields)
         );
+    }
+
+    #[test]
+    fn parses_celebrate_ack() {
+        let notification = parse_notification(
+            br#"{"id":"abcd1234","ok":true,"mode":"agent","state":"celebrate"}"#,
+        )
+        .expect("celebrate ack should parse");
+        match notification {
+            Notification::Ack(ack) => assert_eq!(ack.state.as_deref(), Some("celebrate")),
+            Notification::FirmwareStatus(_) => panic!("expected acknowledgement"),
+        }
     }
 
     #[test]
