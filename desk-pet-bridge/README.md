@@ -63,9 +63,12 @@ Example:
 ```bash
 curl -s http://127.0.0.1:8765/v1/status
 curl -s -X POST http://127.0.0.1:8765/v1/test -H 'Content-Type: application/json' -d '{"state":"thinking"}'
+curl -s -X POST http://127.0.0.1:8765/v1/test -H 'Content-Type: application/json' -d '{"state":"celebrate"}'
 ```
 
-Project Cursor hooks in `.cursor/hooks.json` POST through `scripts/cursor-hook.sh`. Codex (`.codex/hooks.json`) and oh-my-pi OMP (`.omp/hooks/post/desk-pet.js`) POST through `scripts/agent-hook.sh` to their own routes. Hooks stay silent if the bridge is not running. Enablement steps are in [docs/runbook.md](../docs/runbook.md). The pet event `source` is `cursor`, `codex`, or `omp`. Adapters send states only, not captions or usage text.
+`state` may also be `celebrate` (`done` and `success` are accepted aliases). Agent events may include an optional allowlisted `caption` and `mood` (`happy`, `worried`, `startled`). Those fields are for the face; paths and commands are not forwarded. See [docs/scene-ui.md](../docs/scene-ui.md).
+
+Project Cursor hooks in `.cursor/hooks.json` POST through `scripts/cursor-hook.sh`. Codex (`.codex/hooks.json`) and oh-my-pi OMP (`.omp/hooks/post/desk-pet.js`) POST through `scripts/agent-hook.sh` to their own routes. Hooks stay silent if the bridge is not running. Enablement steps are in [docs/runbook.md](../docs/runbook.md). The pet event `source` is `cursor`, `codex`, or `omp`. Codex and OMP adapters send states only. The Cursor mapper may add an allowlisted caption.
 
 ## Tests without hardware
 

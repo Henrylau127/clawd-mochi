@@ -1,6 +1,7 @@
 #include "Face.h"
 
 #include <Arduino.h>
+#include <string.h>
 
 namespace {
 // ── Eye constants (shared by both eye views) ──────────────────
@@ -141,6 +142,8 @@ uint16_t Face::expressionColor(AgentExpression expr) const {
       return tft.color565(200, 40, 40);
     case AgentExpression::SECURITY:
       return tft.color565(140, 40, 160);
+    case AgentExpression::CELEBRATE:
+      return tft.color565(20, 128, 104);
   }
   return display_.colorOrange();
 }
@@ -244,6 +247,102 @@ void Face::drawLinkLost(bool blinkOpen, bool fullRedraw) {
   tft.print("link lost");
 }
 
+void Face::drawSparkle(int16_t cx, int16_t cy, uint16_t col) {
+  Adafruit_ST7789& tft = display_.tft();
+  tft.drawLine(cx - 5, cy, cx + 5, cy, col);
+  tft.drawLine(cx, cy - 5, cx, cy + 5, col);
+  tft.drawPixel(cx - 3, cy - 3, col);
+  tft.drawPixel(cx + 3, cy - 3, col);
+  tft.drawPixel(cx - 3, cy + 3, col);
+  tft.drawPixel(cx + 3, cy + 3, col);
+}
+
+void Face::drawWakeSmile() {
+  Adafruit_ST7789& tft = display_.tft();
+  for (int16_t x = -32; x <= 32; x++) {
+    const int16_t y = static_cast<int16_t>((x * x) / 70);
+    tft.drawPixel(LOGO_CX + x, 156 + y, Display::kBlack);
+    tft.drawPixel(LOGO_CX + x, 157 + y, Display::kBlack);
+  }
+}
+
+void Face::drawWorriedMouth() {
+  Adafruit_ST7789& tft = display_.tft();
+  for (int16_t x = -28; x <= 28; x++) {
+    const int16_t y = static_cast<int16_t>((x * x) / 90);
+    tft.drawPixel(LOGO_CX + x, 164 - y, Display::kBlack);
+    tft.drawPixel(LOGO_CX + x, 165 - y, Display::kBlack);
+  }
+}
+
+void Face::drawStartledMarks() {
+  Adafruit_ST7789& tft = display_.tft();
+  const int16_t y = eyeY() - 12;
+  const int16_t lx = eyeLX(0);
+  const int16_t rx = eyeRX(0);
+  tft.drawLine(lx, y + 8, lx + EYE_W, y, Display::kBlack);
+  tft.drawLine(lx, y + 9, lx + EYE_W, y + 1, Display::kBlack);
+  tft.drawLine(rx, y, rx + EYE_W, y + 8, Display::kBlack);
+  tft.drawLine(rx, y + 1, rx + EYE_W, y + 9, Display::kBlack);
+}
+
+void Face::drawCelebrateFace() {
+  Adafruit_ST7789& tft = display_.tft();
+  tft.fillScreen(display_.animBgColor());
+  const int16_t lx = eyeLX(0);
+  const int16_t rx = eyeRX(0);
+  const int16_t cy = eyeCY();
+  tft.fillRoundRect(lx, cy - 10, EYE_W, 18, 8, Display::kBlack);
+  tft.fillRoundRect(rx, cy - 10, EYE_W, 18, 8, Display::kBlack);
+  drawWakeSmile();
+  const uint16_t spark = tft.color565(255, 220, 80);
+  drawSparkle(32, 36, spark);
+  drawSparkle(46, 168, spark);
+  drawSparkle(188, 156, spark);
+}
+
+void Face::drawCaption(const char* text) {
+  if (text == nullptr || text[0] == '\0') {
+    return;
+  }
+  char line[17] = {};
+  size_t n = 0;
+  while (text[n] != '\0' && n < 16) {
+    line[n] = text[n];
+    n++;
+  }
+  line[n] = '\0';
+
+  Adafruit_ST7789& tft = display_.tft();
+  tft.fillRoundRect(12, 198, 216, 30, 8, tft.color565(16, 20, 28));
+  tft.setTextColor(tft.color565(245, 245, 245));
+  tft.setTextSize(2);
+  const int16_t textW = static_cast<int16_t>(n * 12);
+  int16_t x = static_cast<int16_t>((DISP_W - textW) / 2);
+  if (x < 16) {
+    x = 16;
+  }
+  tft.setCursor(x, 206);
+  tft.print(line);
+}
+
+void Face::drawSceneOverlay(AgentExpression expr, const char* caption, const char* mood) {
+  const bool skipMood = expr == AgentExpression::CELEBRATE || expr == AgentExpression::ERROR ||
+                        expr == AgentExpression::SECURITY;
+  if (!skipMood) {
+    const bool happy = (caption != nullptr && strcmp(caption, "waking up") == 0) ||
+                       (mood != nullptr && strcmp(mood, "happy") == 0);
+    if (happy) {
+      drawWakeSmile();
+    } else if (mood != nullptr && strcmp(mood, "worried") == 0) {
+      drawWorriedMouth();
+    } else if (mood != nullptr && strcmp(mood, "startled") == 0) {
+      drawStartledMarks();
+    }
+  }
+  drawCaption(caption);
+}
+
 void Face::drawSecurityEyes() {
   Adafruit_ST7789& tft = display_.tft();
   tft.fillScreen(display_.animBgColor());
@@ -336,6 +435,9 @@ void Face::drawExpression(AgentExpression expr) {
       break;
     case AgentExpression::SECURITY:
       drawSecurityEyes();
+      break;
+    case AgentExpression::CELEBRATE:
+      drawCelebrateFace();
       break;
   }
 #if defined(DESKPET_DEBUG)

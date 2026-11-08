@@ -83,6 +83,7 @@ TEST idle
 TEST waiting
 TEST error
 TEST security
+TEST celebrate
 WANDER
 PAIR
 UNBOND
@@ -91,7 +92,7 @@ WAKE
 HELP
 ```
 
-`STATUS` returns one-line JSON; `PAIR` opens a 120-second pairing window, `UNBOND` clears stored bonds, and `WANDER` exits a forced agent state. Do not put passkeys, bond keys, tokens, or other sensitive data in logs.
+`STATUS` returns one-line JSON; `PAIR` opens a 120-second pairing window, `UNBOND` clears stored bonds, and `WANDER` exits a forced agent state. `TEST celebrate` shows the done face and a short caption. Do not put passkeys, bond keys, tokens, or other sensitive data in logs. Caption text is a short allowlisted label; see [docs/scene-ui.md](docs/scene-ui.md).
 
 For WSL2 USB passthrough, macOS setup, serial commands, and the bridge checklist, see the [runbook](docs/runbook.md).
 

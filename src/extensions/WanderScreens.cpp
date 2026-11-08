@@ -83,6 +83,7 @@ void WanderScreens::drawCurrent(uint32_t nowMs) {
     case WanderScreen::IDLE: {
       display_.setAnimBgColor(face_.expressionColor(AgentExpression::IDLE));
       face_.drawWanderIdle(blinkOpen_, lookOffset_, !idlePrimed_);
+      face_.drawCaption("wandering");
       idlePrimed_ = true;
       break;
     }

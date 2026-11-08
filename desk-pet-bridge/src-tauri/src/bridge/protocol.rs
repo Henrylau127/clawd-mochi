@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use super::caption;
+
 pub const MAX_PAYLOAD_BYTES: usize = 180;
 
 const ALLOWED_EVENTS: &[&str] = &[
@@ -26,6 +28,7 @@ const ALLOWED_STATES: &[&str] = &[
     "waiting_for_user",
     "error",
     "security",
+    "celebrate",
 ];
 
 const ALLOWED_SECURITY_TYPES: &[&str] = &["ssh_login", "github_login", "deployment", "sudo"];
@@ -79,6 +82,10 @@ pub struct DeskPetEvent {
     pub details: Option<EventDetails>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quota: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mood: Option<String>,
 }
 
 impl DeskPetEvent {
@@ -91,6 +98,8 @@ impl DeskPetEvent {
             ts: None,
             details: None,
             quota: None,
+            caption: None,
+            mood: None,
         }
     }
 
@@ -131,6 +140,12 @@ impl DeskPetEvent {
                 })
             })
             .flatten();
+        sanitized.caption = sanitized
+            .caption
+            .and_then(|value| caption::allowed_caption(&value).map(str::to_string));
+        sanitized.mood = sanitized
+            .mood
+            .and_then(|value| caption::allowed_mood(&value).map(str::to_string));
         sanitized
     }
 
@@ -187,6 +202,8 @@ pub fn prepend_session_start_if_needed(
         .and_then(|event| event.state.as_deref())
         .unwrap_or("coding");
     let mut session_start = DeskPetEvent::new("sessionStart").with_state(state);
+    session_start.caption = events.iter().find_map(|event| event.caption.clone());
+    session_start.mood = events.iter().find_map(|event| event.mood.clone());
     session_start.ensure_id();
     let mut expanded = vec![session_start];
     expanded.extend(events);
@@ -252,6 +269,26 @@ mod tests {
             serde_json::from_slice(&event.to_ble_bytes().expect("serialize")).expect("valid json");
         assert_eq!(value["details"]["type"], "ssh_login");
         assert!(value["details"].get("message").is_none());
+    }
+
+    #[test]
+    fn celebrate_caption_fits_the_payload_budget_and_bad_labels_are_dropped() {
+        let mut event = DeskPetEvent::new("stateUpdate").with_state("celebrate");
+        event.source = Some("cursor".to_string());
+        event.ts = Some("2026-11-07T21:15:00Z".to_string());
+        event.caption = Some("waiting for you".to_string());
+        event.mood = Some("happy".to_string());
+        event.ensure_id();
+        let bytes = event.to_ble_bytes().expect("serialize");
+        assert!(bytes.len() <= MAX_PAYLOAD_BYTES, "{}", bytes.len());
+
+        event.caption = Some("/tmp/secret".to_string());
+        event.mood = Some("sudo".to_string());
+        let text = String::from_utf8(event.to_ble_bytes().expect("serialize")).unwrap();
+        assert!(!text.contains("secret"));
+        assert!(!text.contains("sudo"));
+        assert!(!text.contains("caption"));
+        assert!(!text.contains("mood"));
     }
 
     #[test]

@@ -91,7 +91,7 @@ void SerialDiag::replyErr(const char* msg) {
 void SerialDiag::printHelp() const {
   Serial.println(F("Commands:"));
   Serial.println(F("  STATUS"));
-  Serial.println(F("  TEST coding|thinking|idle|waiting|error|security"));
+  Serial.println(F("  TEST coding|thinking|idle|waiting|error|security|celebrate"));
   Serial.println(F("  PAIR"));
   Serial.println(F("  UNBOND"));
   Serial.println(F("  SLEEP"));

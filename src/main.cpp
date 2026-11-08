@@ -122,6 +122,7 @@ void drawActiveScene() {
       gDisplay.setAnimBgColor(gDisplay.colorOrange());
     }
     gFace.drawExpression(gState.expression);
+    gFace.drawSceneOverlay(gState.expression, gState.caption, gState.mood);
     gQuota.drawBar();
   }
 }

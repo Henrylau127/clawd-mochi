@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+use crate::bridge::caption::{self, ActivityHint};
 use crate::bridge::protocol::ProtocolError;
 
 /// Map a Cursor hook name or an already-normalized desk-pet event into the
@@ -15,6 +16,8 @@ pub fn map_incoming(mut body: Value) -> Result<Value, ProtocolError> {
         .or_else(|| body.get("event").and_then(Value::as_str))
         .unwrap_or("")
         .to_string();
+
+    let hint = ActivityHint::from_value(&body);
 
     if matches!(
         hook.as_str(),
@@ -34,6 +37,7 @@ pub fn map_incoming(mut body: Value) -> Result<Value, ProtocolError> {
         if let Some(obj) = body.as_object_mut() {
             obj.remove("hook");
         }
+        caption::decorate(&mut body, &hook, &hint);
         return Ok(body);
     }
 
@@ -66,6 +70,7 @@ pub fn map_incoming(mut body: Value) -> Result<Value, ProtocolError> {
     if let Some(ts) = body.get("ts") {
         mapped["ts"] = ts.clone();
     }
+    caption::decorate(&mut mapped, &hook, &hint);
     Ok(mapped)
 }
 
@@ -112,5 +117,52 @@ mod tests {
     fn leaves_codex_and_omp_hook_names_unmapped() {
         assert!(map_incoming(json!({"hook": "SessionStart"})).is_err());
         assert!(map_incoming(json!({"hook": "session_start"})).is_err());
+    }
+
+    #[test]
+    fn thought_and_edit_hooks_add_plain_captions() {
+        let thought = map_incoming(json!({"hook": "afterAgentThought"})).unwrap();
+        assert_eq!(thought["caption"], "thinking");
+
+        let edit = map_incoming(json!({
+            "hook": "afterFileEdit",
+            "file_path": "/Users/me/secret.env"
+        }))
+        .unwrap();
+        assert_eq!(edit["state"], "coding");
+        assert_eq!(edit["caption"], "editing");
+        assert!(!edit.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn response_hook_still_waits() {
+        let mapped = map_incoming(json!({"hook": "afterAgentResponse"})).unwrap();
+        assert_eq!(mapped["state"], "waiting_for_user");
+        assert_eq!(mapped["caption"], "waiting for you");
+    }
+
+    #[test]
+    fn finished_commit_celebrates_without_the_command() {
+        let mapped = map_incoming(json!({
+            "hook": "afterShellExecution",
+            "command": "git commit -m 'ship /tmp/id_rsa'"
+        }))
+        .unwrap();
+        assert_eq!(mapped["state"], "celebrate");
+        assert_eq!(mapped["caption"], "committed");
+        let blob = mapped.to_string();
+        assert!(!blob.contains("id_rsa"));
+        assert!(!blob.contains("git"));
+    }
+
+    #[test]
+    fn session_start_keeps_coding_and_adds_a_wake_caption() {
+        let mapped = map_incoming(
+            json!({"event": "sessionStart", "state": "coding", "hook": "sessionStart"}),
+        )
+        .unwrap();
+        assert_eq!(mapped["state"], "coding");
+        assert_eq!(mapped["caption"], "waking up");
+        assert!(mapped.get("hook").is_none());
     }
 }

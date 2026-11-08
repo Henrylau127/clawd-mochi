@@ -10,6 +10,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
+use super::caption;
 use super::loopback::{self, DEFAULT_PORT, HOST};
 use super::protocol::{parse_incoming, DeskPetEvent};
 use crate::codex::events::map_incoming as map_codex;
@@ -167,11 +168,13 @@ async fn omp_event(State(http): State<HttpState>, Json(body): Json<Value>) -> im
 }
 
 async fn test_pet(State(http): State<HttpState>, Json(body): Json<Value>) -> impl IntoResponse {
-    let state = body
-        .get("state")
-        .and_then(Value::as_str)
-        .unwrap_or("coding");
+    let state = caption::canonical_state(
+        body.get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("coding"),
+    );
     let mut event = DeskPetEvent::new("sessionStart").with_state(state);
+    event.caption = caption::caption_for_state(state).map(str::to_string);
     event.source = Some("test".to_string());
     event.ensure_id();
     match event.validate() {

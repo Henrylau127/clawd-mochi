@@ -13,6 +13,10 @@ struct JsonParseResult {
   char state[32] = {};
   char detailType[32] = {};
   int quotaPercent = -1;
+  bool hasCaption = false;
+  bool hasMood = false;
+  char caption[48] = {};
+  char mood[16] = {};
 };
 
 struct JsonProtocol {
